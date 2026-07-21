@@ -97,7 +97,7 @@ export default function App() {
       {/* Page content */}
       <main className="app-main">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Home apiBaseUrl={API_BASE_URL} />} />
           <Route
             path="/ecosystem"
             element={<Ecosystem apiBaseUrl={API_BASE_URL} />}
