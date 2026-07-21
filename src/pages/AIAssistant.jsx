@@ -14,17 +14,11 @@
  * so it works whether or not Tailwind is configured in the host project.
  *
  * Props:
- *   apiBaseUrl?: string   — defaults to the live backend origin (see
- *                           DEFAULT_API_BASE_URL below). If the frontend
- *                           and backend are ever deployed on the SAME
- *                           domain (proxy/rewrites set up), pass "" to
- *                           go back to same-origin requests.
+ *   apiBaseUrl?: string   — defaults to '' (same-origin requests to /api/ai/...)
  *   useStreaming?: bool   — defaults to true (falls back to normal chat on error)
  *
  * Layout: left sidebar with "New chat" + chat history, main panel on
- * the right with the conversation and the input bar. On small/mobile
- * screens the sidebar becomes an off-canvas drawer opened via a menu
- * button in the top bar, so the chat area gets full width by default.
+ * the right with the conversation and the input bar.
  *
  * History is persisted on the backend (ChatSession/MongoDB) via:
  *   GET    /api/ai/sessions            -> list saved chats
@@ -37,14 +31,6 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-
-// ---------------- API base URL ----------------
-// The frontend and backend are deployed on two different Vercel
-// domains, so same-origin ("") fetches to /api/ai/... were hitting
-// the FRONTEND's own domain (which has no such route) and getting
-// back an HTML "page not found" response instead of JSON. Pointing
-// this at the actual backend origin fixes that.
-const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 const SUGGESTED_PROMPTS = [
   "What is Injective in simple terms?",
@@ -108,7 +94,7 @@ function formatSessionTime(value) {
     : date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStreaming = true }) {
+export default function AIAssistant({ apiBaseUrl = "", useStreaming = true }) {
   const [messages, setMessages] = useState([]); // {role, content, id}
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -119,9 +105,6 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isSessionOpening, setIsSessionOpening] = useState(false);
-
-  // Mobile: sidebar is an off-canvas drawer, closed by default.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -157,9 +140,8 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
     setIsHistoryLoading(true);
     try {
       const res = await fetch(`${apiBaseUrl}/api/ai/sessions`);
-      if (!res.ok) return;
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setSessions(data.sessions);
       }
     } catch (err) {
@@ -174,15 +156,11 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
     setInput("");
     setErrorMsg("");
     setActiveSessionId(null);
-    setSidebarOpen(false);
     if (textareaRef.current) textareaRef.current.focus();
   }
 
   async function handleOpenSession(session) {
-    if (session.sessionId === activeSessionId || isSessionOpening) {
-      setSidebarOpen(false);
-      return;
-    }
+    if (session.sessionId === activeSessionId || isSessionOpening) return;
     setIsSessionOpening(true);
     setErrorMsg("");
     try {
@@ -193,7 +171,6 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       }
       setMessages(data.messages.map((m) => ({ ...m, id: nextId() })));
       setActiveSessionId(data.sessionId);
-      setSidebarOpen(false);
     } catch (err) {
       console.error(err);
       setErrorMsg("Couldn't load that chat. Please try again.");
@@ -347,34 +324,14 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       <style>{STYLES}</style>
 
       <div className="nv-page">
-        {/* Backdrop for the mobile off-canvas sidebar. Only rendered (and
-            only intercepts clicks) while the sidebar is open on small
-            screens; on desktop it stays invisible via CSS regardless. */}
-        {sidebarOpen && (
-          <div
-            className="nv-sidebar-backdrop"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
         {/* ---------------- Left sidebar ---------------- */}
-        <aside className={`nv-sidebar ${sidebarOpen ? "nv-sidebar-open" : ""}`}>
-          <div className="nv-sidebar-top">
-            <div className="nv-brand">
-              <div className="nv-brand-mark">N</div>
-              <div className="nv-brand-text">
-                <div className="nv-brand-title">NOVA</div>
-                <div className="nv-brand-sub">Injective Research Assistant</div>
-              </div>
+        <aside className="nv-sidebar">
+          <div className="nv-brand">
+            <div className="nv-brand-mark">N</div>
+            <div className="nv-brand-text">
+              <div className="nv-brand-title">NOVA</div>
+              <div className="nv-brand-sub">Injective Research Assistant</div>
             </div>
-            <button
-              className="nv-sidebar-close"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            >
-              <CloseIcon />
-            </button>
           </div>
 
           <div className="nv-status-row">
@@ -432,13 +389,6 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
         {/* ---------------- Main chat panel ---------------- */}
         <main className="nv-main">
           <div className="nv-topbar">
-            <button
-              className="nv-menu-btn"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
-            >
-              <MenuIcon />
-            </button>
             <span className="nv-topbar-crumb">Injective / Assistant</span>
             <span className="nv-topbar-title">{currentTitle}</span>
           </div>
@@ -544,13 +494,6 @@ function ChevronIcon() {
     </svg>
   );
 }
-function MenuIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M4 7H20M4 12H20M4 17H20" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ---------------- Self-contained styles ----------------
 const STYLES = `
@@ -580,22 +523,9 @@ const STYLES = `
   display: flex;
   width: 100%;
   height: 100vh;
-  height: 100dvh;
   background: var(--nv-bg);
   font-family: var(--nv-font-body);
   overflow: hidden;
-  position: relative;
-}
-
-/* Mobile backdrop behind the off-canvas sidebar. Hidden entirely on
-   desktop widths (see the 860px breakpoint below), where the sidebar
-   is always docked in-flow and never needs a backdrop. */
-.nv-sidebar-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 30;
 }
 
 /* ---------------- Sidebar ---------------- */
@@ -610,24 +540,7 @@ const STYLES = `
   gap: 18px;
 }
 
-.nv-sidebar-top { display: flex; align-items: center; gap: 8px; }
-.nv-sidebar-close {
-  display: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--nv-hairline);
-  color: var(--nv-text-dim);
-  border-radius: 6px;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.nv-sidebar-close:hover { border-color: var(--nv-signal); color: var(--nv-signal); }
-
-.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; min-width: 0; }
+.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
 .nv-brand-mark {
   width: 30px;
   height: 30px;
@@ -643,7 +556,6 @@ const STYLES = `
   font-weight: 700;
   font-size: 14px;
 }
-.nv-brand-text { min-width: 0; }
 .nv-brand-title {
   font-family: var(--nv-font-display);
   font-weight: 700;
@@ -656,9 +568,6 @@ const STYLES = `
   font-size: 10.5px;
   color: var(--nv-text-faint);
   margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .nv-status-row { display: flex; align-items: center; gap: 6px; padding: 0 3px; }
@@ -796,22 +705,6 @@ const STYLES = `
   border-bottom: 1px solid var(--nv-hairline);
   flex-shrink: 0;
 }
-.nv-menu-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  background: transparent;
-  border: 1px solid var(--nv-hairline);
-  color: var(--nv-text-dim);
-  border-radius: 6px;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  flex-shrink: 0;
-  margin-right: 2px;
-}
-.nv-menu-btn:hover { border-color: var(--nv-signal); color: var(--nv-signal); }
 .nv-topbar-crumb {
   font-family: var(--nv-font-mono);
   font-size: 10.5px;
@@ -833,7 +726,6 @@ const STYLES = `
 .nv-body {
   flex: 1;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 26px clamp(16px, 8vw, 160px);
   display: flex;
   flex-direction: column;
@@ -996,60 +888,8 @@ const STYLES = `
   .nv-live-dot, .nv-signal-bars i, .nv-cursor { animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
-/* ---------------- Responsive ---------------- */
-
-/* Tablet: sidebar narrows slightly, tighter side padding. Still docked
-   in-flow (not a drawer) down to 860px. */
-@media (max-width: 860px) {
-  .nv-sidebar { width: 232px; }
-}
-
-/* Below 720px the sidebar becomes an off-canvas drawer: fixed to the
-   left edge, slid out of view by default, and toggled via the menu
-   button in the top bar. The chat area gets the full viewport width. */
 @media (max-width: 720px) {
-  .nv-sidebar-backdrop { display: block; }
-
-  .nv-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: min(84vw, 300px);
-    z-index: 40;
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    box-shadow: 0 0 0 1px var(--nv-hairline);
-  }
-  .nv-sidebar-open { transform: translateX(0); }
-  .nv-sidebar-close { display: flex; }
-
-  .nv-menu-btn { display: flex; }
-
-  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 16px; padding-right: 16px; }
-  .nv-bubble-user { max-width: 88%; }
-}
-
-/* Large phones: trim vertical rhythm and empty-state type a touch so
-   the first screen doesn't feel cramped. */
-@media (max-width: 560px) {
-  .nv-topbar { padding-top: 12px; padding-bottom: 11px; gap: 8px; }
-  .nv-topbar-crumb { display: none; }
-  .nv-body { padding-top: 20px; padding-bottom: 20px; gap: 15px; }
-  .nv-empty { margin-top: 4vh; }
-  .nv-empty-title { font-size: 19px; }
-  .nv-empty-sub { font-size: 13px; margin-bottom: 18px; }
-  .nv-chip { padding: 11px 12px; font-size: 13px; }
-  .nv-input-bar { padding-top: 12px; padding-bottom: 16px; gap: 8px; }
-  .nv-send-btn { width: 38px; height: 38px; }
-}
-
-/* Small phones: sidebar drawer takes nearly the full width, bubbles
-   get more breathing room, row labels/timers shrink further. */
-@media (max-width: 400px) {
-  .nv-sidebar { width: 88vw; }
-  .nv-bubble-user { max-width: 92%; }
-  .nv-bubble, .nv-textarea { font-size: 13.5px; }
-  .nv-row-label { margin-left: 9px; }
+  .nv-sidebar { width: 220px; padding: 16px 10px; }
+  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 14px; padding-right: 14px; }
 }
 `;
