@@ -31,11 +31,23 @@
  *   small phones (~360px) up to desktop.
  *
  * Props:
- *   apiBaseUrl?: string — defaults to '' (same-origin /api/home/... calls)
+ *   apiBaseUrl?: string — defaults to the live backend origin. If the
+ *   frontend and backend are ever deployed on the SAME domain (e.g.
+ *   Vercel rewrites/proxy is set up), you can override this back to
+ *   '' so calls stay same-origin instead.
  * ------------------------------------------------------------------
  */
 
 import { useState, useEffect, useCallback } from "react";
+
+// ---------------- API base URL ----------------
+// The frontend and backend are deployed on two different Vercel
+// domains, so same-origin ("") fetches to /api/home/... were hitting
+// the FRONTEND's own domain (which has no such route) and getting
+// back Vercel's HTML "page not found" response instead of JSON —
+// hence the 404s and "Unexpected token 'T'... is not valid JSON"
+// errors. Pointing this at the actual backend origin fixes that.
+const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 // ---------------- Fallback data (shown instantly, replaced once the API responds) ----------------
 // These are placeholder values rendered immediately on first paint, before
@@ -154,7 +166,7 @@ function formatChange(value) {
   return `${sign}${value.toFixed(2)}%`;
 }
 
-export default function Home({ apiBaseUrl = "" }) {
+export default function Home({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   // Live network stats (price, staked, burned, volume) + loading/error state.
   const [stats, setStats] = useState(FALLBACK_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -177,8 +189,12 @@ export default function Home({ apiBaseUrl = "" }) {
     setStatsError(false);
     try {
       const res = await fetch(`${apiBaseUrl}/api/home/stats`);
+      if (!res.ok) {
+        setStatsError(true);
+        return;
+      }
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         setStats(data.stats);
       } else {
         setStatsError(true);
@@ -198,8 +214,9 @@ export default function Home({ apiBaseUrl = "" }) {
     setEcosystemLoading(true);
     try {
       const res = await fetch(`${apiBaseUrl}/api/home/ecosystem-featured`);
+      if (!res.ok) return;
       const data = await res.json();
-      if (res.ok && data.success && data.projects?.length) {
+      if (data.success && data.projects?.length) {
         setEcosystem(data.projects);
       }
     } catch (err) {
