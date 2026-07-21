@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Helix",
+    "category": "DEX",
+    "tvl": "N/A",
+    "description": "Institutional-grade decentralized exchange on Injective, offering spot aur derivatives trading.",
+    "link": "https://helixapp.com"
+  },
+  {
+    "name": "Mito",
+    "category": "AI",
+    "tvl": "N/A",
+    "description": "Automated vaults aur structured products, AI-driven strategies ke sath.",
+    "link": "https://mitofinance.com"
+  },
+  {
+    "name": "Black Panther",
+    "category": "DEX",
+    "tvl": "N/A",
+    "description": "DeFi protocol jo swaps, staking aur yield farming offer karta hai.",
+    "link": "https://blackpanther.fi"
+  },
+  {
+    "name": "Hydro",
+    "category": "Lending",
+    "tvl": "N/A",
+    "description": "Lending aur borrowing protocol Injective chain par.",
+    "link": "https://hydroprotocol.finance"
+  }
+]
