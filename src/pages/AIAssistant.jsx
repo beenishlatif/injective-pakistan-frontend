@@ -14,17 +14,14 @@
  * so it works whether or not Tailwind is configured in the host project.
  *
  * Props:
- *   apiBaseUrl?: string   — defaults to the live backend origin (see
- *                           DEFAULT_API_BASE_URL below). If the frontend
- *                           and backend are ever deployed on the SAME
- *                           domain (proxy/rewrites set up), pass "" to
- *                           go back to same-origin requests.
+ *   apiBaseUrl?: string   — defaults to the deployed backend origin
+ *                           (https://injective-pakistan-backend-2gbb.vercel.app).
+ *                           Override this if you point the component at a
+ *                           different backend (e.g. localhost during dev).
  *   useStreaming?: bool   — defaults to true (falls back to normal chat on error)
  *
  * Layout: left sidebar with "New chat" + chat history, main panel on
- * the right with the conversation and the input bar. On small/mobile
- * screens the sidebar becomes an off-canvas drawer opened via a menu
- * button in the top bar, so the chat area gets full width by default.
+ * the right with the conversation and the input bar.
  *
  * History is persisted on the backend (ChatSession/MongoDB) via:
  *   GET    /api/ai/sessions            -> list saved chats
@@ -33,17 +30,29 @@
  * `sessionId` is sent along with every /chat and /chat/stream call so
  * the backend knows which conversation to append to (or creates a
  * new one and returns its id when sessionId is null).
+ *
+ * IMPORTANT — cross-origin setup:
+ * The frontend (injective-pakistan-frontend-twj2.vercel.app) and backend
+ * (injective-pakistan-backend-2gbb.vercel.app) are on different domains,
+ * so:
+ *   1. This component now defaults apiBaseUrl to the backend's full origin
+ *      instead of '' (same-origin), since same-origin requests were being
+ *      sent to the frontend's own domain and returning 404.
+ *   2. Your Express backend MUST send CORS headers allowing the frontend
+ *      origin, e.g.:
+ *        app.use(cors({
+ *          origin: "https://injective-pakistan-frontend-twj2.vercel.app",
+ *          credentials: true,
+ *        }));
+ *      Without this, the browser will block the response even if the
+ *      request reaches the backend correctly.
  * ------------------------------------------------------------------
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
-// ---------------- API base URL ----------------
-// The frontend and backend are deployed on two different Vercel
-// domains, so same-origin ("") fetches to /api/ai/... were hitting
-// the FRONTEND's own domain (which has no such route) and getting
-// back an HTML "page not found" response instead of JSON. Pointing
-// this at the actual backend origin fixes that.
+// Backend origin — update here (or via the apiBaseUrl prop) if the backend
+// URL ever changes.
 const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 const SUGGESTED_PROMPTS = [
@@ -108,7 +117,41 @@ function formatSessionTime(value) {
     : date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStreaming = true }) {
+// ---- Safe response parsing ----------------------------------------------
+// Fetching a URL that doesn't exist on the target server (wrong domain,
+// wrong path, backend down, etc.) typically returns an HTML error page
+// with a non-2xx status, or the wrong content-type. Calling res.json() on
+// that blindly throws a cryptic "Unexpected token '<'" error that shows up
+// to the user as a generic "assistant hit an error" message. This helper
+// checks status + content-type first and throws a clear, descriptive
+// error instead, so failures are easy to diagnose (e.g. CORS/404/backend
+// down vs. an actual API error).
+async function safeParseJson(res, context) {
+  const contentType = res.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    const bodyPreview = (await res.text()).slice(0, 200);
+    throw new Error(
+      `${context}: expected JSON but got "${contentType || "unknown content-type"}" ` +
+        `(status ${res.status}). This usually means the request hit the wrong URL, ` +
+        `the backend is down, or a CORS/redirect issue is returning an HTML error page. ` +
+        `Response preview: ${bodyPreview}`
+    );
+  }
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data?.error || `${context} failed with status ${res.status}`);
+  }
+
+  return data;
+}
+
+export default function AIAssistant({
+  apiBaseUrl = DEFAULT_API_BASE_URL,
+  useStreaming = true,
+}) {
   const [messages, setMessages] = useState([]); // {role, content, id}
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -119,9 +162,6 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isSessionOpening, setIsSessionOpening] = useState(false);
-
-  // Mobile: sidebar is an off-canvas drawer, closed by default.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -157,13 +197,12 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
     setIsHistoryLoading(true);
     try {
       const res = await fetch(`${apiBaseUrl}/api/ai/sessions`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await safeParseJson(res, "Loading chat history");
       if (data.success) {
         setSessions(data.sessions);
       }
     } catch (err) {
-      console.error("Failed to load chat history:", err);
+      console.error("Failed to load chat history:", err.message);
     } finally {
       setIsHistoryLoading(false);
     }
@@ -174,28 +213,20 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
     setInput("");
     setErrorMsg("");
     setActiveSessionId(null);
-    setSidebarOpen(false);
     if (textareaRef.current) textareaRef.current.focus();
   }
 
   async function handleOpenSession(session) {
-    if (session.sessionId === activeSessionId || isSessionOpening) {
-      setSidebarOpen(false);
-      return;
-    }
+    if (session.sessionId === activeSessionId || isSessionOpening) return;
     setIsSessionOpening(true);
     setErrorMsg("");
     try {
       const res = await fetch(`${apiBaseUrl}/api/ai/sessions/${session.sessionId}`);
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Could not load this chat.");
-      }
+      const data = await safeParseJson(res, "Loading chat");
       setMessages(data.messages.map((m) => ({ ...m, id: nextId() })));
       setActiveSessionId(data.sessionId);
-      setSidebarOpen(false);
     } catch (err) {
-      console.error(err);
+      console.error(err.message);
       setErrorMsg("Couldn't load that chat. Please try again.");
     } finally {
       setIsSessionOpening(false);
@@ -208,17 +239,14 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       const res = await fetch(`${apiBaseUrl}/api/ai/sessions/${sessionId}`, {
         method: "DELETE",
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Could not delete this chat.");
-      }
+      await safeParseJson(res, "Deleting chat");
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
       if (sessionId === activeSessionId) {
         setMessages([]);
         setActiveSessionId(null);
       }
     } catch (err) {
-      console.error(err);
+      console.error(err.message);
       setErrorMsg("Couldn't delete that chat. Please try again.");
     }
   }
@@ -246,7 +274,7 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
         await fetchReply(apiHistory);
       }
     } catch (err) {
-      console.error(err);
+      console.error(err.message);
       setErrorMsg("Couldn't reach the assistant. Please try again.");
       // Remove the empty placeholder assistant bubble left behind by a failed stream.
       setMessages((prev) => prev.filter((m) => m.content && m.content.trim()));
@@ -261,10 +289,7 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: apiHistory, sessionId: activeSessionId }),
     });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Request failed");
-    }
+    const data = await safeParseJson(res, "Sending message");
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: data.reply, id: nextId() },
@@ -280,8 +305,10 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       body: JSON.stringify({ messages: apiHistory, sessionId: activeSessionId }),
     });
 
+    // A non-OK status or missing body (e.g. wrong URL / backend down /
+    // CORS block) means there's nothing to stream — fall back to the
+    // regular JSON endpoint instead of trying to read a broken stream.
     if (!res.ok || !res.body) {
-      // fall back to non-streaming
       return fetchReply(apiHistory);
     }
 
@@ -347,34 +374,14 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
       <style>{STYLES}</style>
 
       <div className="nv-page">
-        {/* Backdrop for the mobile off-canvas sidebar. Only rendered (and
-            only intercepts clicks) while the sidebar is open on small
-            screens; on desktop it stays invisible via CSS regardless. */}
-        {sidebarOpen && (
-          <div
-            className="nv-sidebar-backdrop"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
         {/* ---------------- Left sidebar ---------------- */}
-        <aside className={`nv-sidebar ${sidebarOpen ? "nv-sidebar-open" : ""}`}>
-          <div className="nv-sidebar-top">
-            <div className="nv-brand">
-              <div className="nv-brand-mark">N</div>
-              <div className="nv-brand-text">
-                <div className="nv-brand-title">NOVA</div>
-                <div className="nv-brand-sub">Injective Research Assistant</div>
-              </div>
+        <aside className="nv-sidebar">
+          <div className="nv-brand">
+            <div className="nv-brand-mark">N</div>
+            <div className="nv-brand-text">
+              <div className="nv-brand-title">NOVA</div>
+              <div className="nv-brand-sub">Injective Research Assistant</div>
             </div>
-            <button
-              className="nv-sidebar-close"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            >
-              <CloseIcon />
-            </button>
           </div>
 
           <div className="nv-status-row">
@@ -432,13 +439,6 @@ export default function AIAssistant({ apiBaseUrl = DEFAULT_API_BASE_URL, useStre
         {/* ---------------- Main chat panel ---------------- */}
         <main className="nv-main">
           <div className="nv-topbar">
-            <button
-              className="nv-menu-btn"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open sidebar"
-            >
-              <MenuIcon />
-            </button>
             <span className="nv-topbar-crumb">Injective / Assistant</span>
             <span className="nv-topbar-title">{currentTitle}</span>
           </div>
@@ -544,13 +544,6 @@ function ChevronIcon() {
     </svg>
   );
 }
-function MenuIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M4 7H20M4 12H20M4 17H20" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ---------------- Self-contained styles ----------------
 const STYLES = `
@@ -580,22 +573,9 @@ const STYLES = `
   display: flex;
   width: 100%;
   height: 100vh;
-  height: 100dvh;
   background: var(--nv-bg);
   font-family: var(--nv-font-body);
   overflow: hidden;
-  position: relative;
-}
-
-/* Mobile backdrop behind the off-canvas sidebar. Hidden entirely on
-   desktop widths (see the 860px breakpoint below), where the sidebar
-   is always docked in-flow and never needs a backdrop. */
-.nv-sidebar-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 30;
 }
 
 /* ---------------- Sidebar ---------------- */
@@ -610,24 +590,7 @@ const STYLES = `
   gap: 18px;
 }
 
-.nv-sidebar-top { display: flex; align-items: center; gap: 8px; }
-.nv-sidebar-close {
-  display: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--nv-hairline);
-  color: var(--nv-text-dim);
-  border-radius: 6px;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.nv-sidebar-close:hover { border-color: var(--nv-signal); color: var(--nv-signal); }
-
-.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; min-width: 0; }
+.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
 .nv-brand-mark {
   width: 30px;
   height: 30px;
@@ -643,7 +606,6 @@ const STYLES = `
   font-weight: 700;
   font-size: 14px;
 }
-.nv-brand-text { min-width: 0; }
 .nv-brand-title {
   font-family: var(--nv-font-display);
   font-weight: 700;
@@ -656,9 +618,6 @@ const STYLES = `
   font-size: 10.5px;
   color: var(--nv-text-faint);
   margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .nv-status-row { display: flex; align-items: center; gap: 6px; padding: 0 3px; }
@@ -796,22 +755,6 @@ const STYLES = `
   border-bottom: 1px solid var(--nv-hairline);
   flex-shrink: 0;
 }
-.nv-menu-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  background: transparent;
-  border: 1px solid var(--nv-hairline);
-  color: var(--nv-text-dim);
-  border-radius: 6px;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  flex-shrink: 0;
-  margin-right: 2px;
-}
-.nv-menu-btn:hover { border-color: var(--nv-signal); color: var(--nv-signal); }
 .nv-topbar-crumb {
   font-family: var(--nv-font-mono);
   font-size: 10.5px;
@@ -833,7 +776,6 @@ const STYLES = `
 .nv-body {
   flex: 1;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 26px clamp(16px, 8vw, 160px);
   display: flex;
   flex-direction: column;
@@ -996,60 +938,8 @@ const STYLES = `
   .nv-live-dot, .nv-signal-bars i, .nv-cursor { animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
-/* ---------------- Responsive ---------------- */
-
-/* Tablet: sidebar narrows slightly, tighter side padding. Still docked
-   in-flow (not a drawer) down to 860px. */
-@media (max-width: 860px) {
-  .nv-sidebar { width: 232px; }
-}
-
-/* Below 720px the sidebar becomes an off-canvas drawer: fixed to the
-   left edge, slid out of view by default, and toggled via the menu
-   button in the top bar. The chat area gets the full viewport width. */
 @media (max-width: 720px) {
-  .nv-sidebar-backdrop { display: block; }
-
-  .nv-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: min(84vw, 300px);
-    z-index: 40;
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    box-shadow: 0 0 0 1px var(--nv-hairline);
-  }
-  .nv-sidebar-open { transform: translateX(0); }
-  .nv-sidebar-close { display: flex; }
-
-  .nv-menu-btn { display: flex; }
-
-  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 16px; padding-right: 16px; }
-  .nv-bubble-user { max-width: 88%; }
-}
-
-/* Large phones: trim vertical rhythm and empty-state type a touch so
-   the first screen doesn't feel cramped. */
-@media (max-width: 560px) {
-  .nv-topbar { padding-top: 12px; padding-bottom: 11px; gap: 8px; }
-  .nv-topbar-crumb { display: none; }
-  .nv-body { padding-top: 20px; padding-bottom: 20px; gap: 15px; }
-  .nv-empty { margin-top: 4vh; }
-  .nv-empty-title { font-size: 19px; }
-  .nv-empty-sub { font-size: 13px; margin-bottom: 18px; }
-  .nv-chip { padding: 11px 12px; font-size: 13px; }
-  .nv-input-bar { padding-top: 12px; padding-bottom: 16px; gap: 8px; }
-  .nv-send-btn { width: 38px; height: 38px; }
-}
-
-/* Small phones: sidebar drawer takes nearly the full width, bubbles
-   get more breathing room, row labels/timers shrink further. */
-@media (max-width: 400px) {
-  .nv-sidebar { width: 88vw; }
-  .nv-bubble-user { max-width: 92%; }
-  .nv-bubble, .nv-textarea { font-size: 13.5px; }
-  .nv-row-label { margin-left: 9px; }
+  .nv-sidebar { width: 220px; padding: 16px 10px; }
+  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 14px; padding-right: 14px; }
 }
 `;
