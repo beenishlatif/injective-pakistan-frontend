@@ -17,11 +17,25 @@
  *   POST /api/community/join
  *
  * Props:
- *   apiBaseUrl?: string — defaults to '' (same-origin requests)
+ *   apiBaseUrl?: string — defaults to the live backend origin (see
+ *   DEFAULT_API_BASE_URL below). If the frontend and backend are
+ *   ever deployed on the SAME domain (e.g. Vercel rewrites/proxy is
+ *   set up), you can override this back to '' so calls stay
+ *   same-origin instead.
  * ------------------------------------------------------------------
  */
 
 import { useState, useEffect, useCallback } from "react";
+
+// ---------------- API base URL ----------------
+// The frontend and backend are deployed on two different Vercel
+// domains, so same-origin ("") fetches to /api/community/... were
+// hitting the FRONTEND's own domain (which has no such route) and
+// getting back Vercel's HTML "page not found" response instead of
+// JSON — hence the data not loading after deployment even though it
+// worked locally. Pointing this at the actual backend origin fixes
+// that (same fix already applied in Home.jsx).
+const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 const PILLARS = [
   {
@@ -88,7 +102,7 @@ function formatEventDate(value) {
   };
 }
 
-export default function Community({ apiBaseUrl = "" }) {
+export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   const [stats, setStats] = useState(null);
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(true);
