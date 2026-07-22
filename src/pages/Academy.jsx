@@ -32,11 +32,24 @@
  *   POST /api/academy/enroll       -> { name, email, trackSlug } -> enrolls a learner
  *
  * Props:
- *   apiBaseUrl?: string — defaults to '' (same-origin /api/academy/... calls)
+ *   apiBaseUrl?: string — defaults to the deployed backend's URL via
+ *   VITE_API_BASE_URL (falls back to the known production backend if the
+ *   env var isn't set). The frontend and backend are two separate Vercel
+ *   projects/domains, so this CANNOT default to '' (same-origin) — a
+ *   same-origin call would hit the frontend's own domain, which has no
+ *   /api/academy/... routes, and silently fail. Set VITE_API_BASE_URL in
+ *   the frontend's Vercel Environment Variables to override.
  * ------------------------------------------------------------------
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+
+// The frontend (injective-pakistan-frontend-...vercel.app) and backend
+// (injective-pakistan-backend-2gbb.vercel.app) are separate deployments.
+// Reading VITE_API_BASE_URL lets you override this per-environment
+// (e.g. localhost:5000 while developing) without touching this file.
+const DEFAULT_API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "https://injective-pakistan-backend-2gbb.vercel.app";
 
 // ---------------- Fallback data (shown instantly, replaced once the API responds) ----------------
 const FALLBACK_STATS = {
@@ -226,7 +239,7 @@ function formatDate(value) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default function Academy({ apiBaseUrl = "" }) {
+export default function Academy({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   const [stats, setStats] = useState(FALLBACK_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
