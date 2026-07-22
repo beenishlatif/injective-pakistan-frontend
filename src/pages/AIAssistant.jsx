@@ -1,31 +1,59 @@
 /**
- * AIAssistant.jsx (pages/)
+ * AIAssistant.jsx
  * ------------------------------------------------------------------
  * Full-page AI assistant for the Injective website.
  * Answers any Injective-related (or general) question by calling the
  * backend at POST /api/ai/chat (or /api/ai/chat/stream for a live
  * typing effect).
  *
- * Auth:
- *   - Guests can chat freely, but nothing is saved — closing/refreshing
- *     loses the conversation, and the History sidebar shows a
- *     "sign in to save your chats" prompt instead of trying to load
- *     history (which requires auth on the backend).
- *   - Signed-in users (email/password or Google) get every chat
- *     persisted on the backend, scoped to their own account.
- *   - Requires <AuthProvider> to be wrapping the app (see App.jsx).
+ * Drop this file into your React project (e.g. src/components/) and
+ * render <AIAssistant /> as a full page/route (e.g. /assistant),
+ * not as a floating widget.
  *
- * Responsive:
- *   - Desktop: fixed sidebar + main panel side by side.
- *   - Tablet/mobile (<= 860px): sidebar becomes an off-canvas drawer,
- *     opened via a hamburger button in the top bar, with a tap-outside
- *     overlay to close it.
+ * No external UI library required — styling is self-contained below,
+ * so it works whether or not Tailwind is configured in the host project.
+ *
+ * Props:
+ *   apiBaseUrl?: string   — defaults to the deployed backend origin
+ *                           (https://injective-pakistan-backend-2gbb.vercel.app).
+ *                           Override this if you point the component at a
+ *                           different backend (e.g. localhost during dev).
+ *   useStreaming?: bool   — defaults to true (falls back to normal chat on error)
+ *
+ * Layout: left sidebar with "New chat" + chat history, main panel on
+ * the right with the conversation and the input bar.
+ *
+ * History is persisted on the backend (ChatSession/MongoDB) via:
+ *   GET    /api/ai/sessions            -> list saved chats
+ *   GET    /api/ai/sessions/:sessionId -> load one chat's messages
+ *   DELETE /api/ai/sessions/:sessionId -> delete a chat
+ * `sessionId` is sent along with every /chat and /chat/stream call so
+ * the backend knows which conversation to append to (or creates a
+ * new one and returns its id when sessionId is null).
+ *
+ * IMPORTANT — cross-origin setup:
+ * The frontend (injective-pakistan-frontend-twj2.vercel.app) and backend
+ * (injective-pakistan-backend-2gbb.vercel.app) are on different domains,
+ * so:
+ *   1. This component now defaults apiBaseUrl to the backend's full origin
+ *      instead of '' (same-origin), since same-origin requests were being
+ *      sent to the frontend's own domain and returning 404.
+ *   2. Your Express backend MUST send CORS headers allowing the frontend
+ *      origin, e.g.:
+ *        app.use(cors({
+ *          origin: "https://injective-pakistan-frontend-twj2.vercel.app",
+ *          credentials: true,
+ *        }));
+ *      Without this, the browser will block the response even if the
+ *      request reaches the backend correctly.
  * ------------------------------------------------------------------
  */
 
-import { useState, useRef, useEffect } from "react";
-import { useAuth } from "../context/AuthContext.jsx";
-import AuthModal from "../components/AuthModal.jsx";
+import { useState, useRef, useEffect, useCallback } from "react";
+
+// Backend origin — update here (or via the apiBaseUrl prop) if the backend
+// URL ever changes.
+const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 const SUGGESTED_PROMPTS = [
   "What is Injective in simple terms?",
@@ -76,6 +104,8 @@ function TypingIndicator() {
   );
 }
 
+// Purely presentational — formats a session's last-updated time for the
+// history list (e.g. "14:32" for today, "Jul 20" for older chats).
 function formatSessionTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -87,13 +117,15 @@ function formatSessionTime(value) {
     : date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function initials(name) {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || name[0].toUpperCase();
-}
-
 // ---- Safe response parsing ----------------------------------------------
+// Fetching a URL that doesn't exist on the target server (wrong domain,
+// wrong path, backend down, etc.) typically returns an HTML error page
+// with a non-2xx status, or the wrong content-type. Calling res.json() on
+// that blindly throws a cryptic "Unexpected token '<'" error that shows up
+// to the user as a generic "assistant hit an error" message. This helper
+// checks status + content-type first and throws a clear, descriptive
+// error instead, so failures are easy to diagnose (e.g. CORS/404/backend
+// down vs. an actual API error).
 async function safeParseJson(res, context) {
   const contentType = res.headers.get("content-type") || "";
 
@@ -116,21 +148,20 @@ async function safeParseJson(res, context) {
   return data;
 }
 
-export default function AIAssistant({ useStreaming = true }) {
-  const { user, isAuthenticated, isLoading: authLoading, authFetch, logout } = useAuth();
-
+export default function AIAssistant({
+  apiBaseUrl = DEFAULT_API_BASE_URL,
+  useStreaming = true,
+}) {
   const [messages, setMessages] = useState([]); // {role, content, id}
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [sessions, setSessions] = useState([]);
+  // Chat history — backed by the server (MongoDB), not local state.
+  const [sessions, setSessions] = useState([]); // {sessionId, title, updatedAt}
   const [activeSessionId, setActiveSessionId] = useState(null);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isSessionOpening, setIsSessionOpening] = useState(false);
-
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -148,30 +179,28 @@ export default function AIAssistant({ useStreaming = true }) {
     if (textareaRef.current) textareaRef.current.focus();
   }, []);
 
+  // auto-resize textarea
   useEffect(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
-    textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    textareaRef.current.style.height =
+      Math.min(textareaRef.current.scrollHeight, 120) + "px";
   }, [input]);
 
-  // Load saved chats only once signed in. Signing out clears everything local.
+  // Load the saved chat list from the backend on mount.
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchSessions();
-    } else {
-      setSessions([]);
-      setActiveSessionId(null);
-      setMessages([]);
-    }
+    fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, []);
 
   async function fetchSessions() {
     setIsHistoryLoading(true);
     try {
-      const res = await authFetch("/api/ai/sessions");
+      const res = await fetch(`${apiBaseUrl}/api/ai/sessions`);
       const data = await safeParseJson(res, "Loading chat history");
-      if (data.success) setSessions(data.sessions);
+      if (data.success) {
+        setSessions(data.sessions);
+      }
     } catch (err) {
       console.error("Failed to load chat history:", err.message);
     } finally {
@@ -184,7 +213,6 @@ export default function AIAssistant({ useStreaming = true }) {
     setInput("");
     setErrorMsg("");
     setActiveSessionId(null);
-    setSidebarOpen(false);
     if (textareaRef.current) textareaRef.current.focus();
   }
 
@@ -192,9 +220,8 @@ export default function AIAssistant({ useStreaming = true }) {
     if (session.sessionId === activeSessionId || isSessionOpening) return;
     setIsSessionOpening(true);
     setErrorMsg("");
-    setSidebarOpen(false);
     try {
-      const res = await authFetch(`/api/ai/sessions/${session.sessionId}`);
+      const res = await fetch(`${apiBaseUrl}/api/ai/sessions/${session.sessionId}`);
       const data = await safeParseJson(res, "Loading chat");
       setMessages(data.messages.map((m) => ({ ...m, id: nextId() })));
       setActiveSessionId(data.sessionId);
@@ -209,7 +236,9 @@ export default function AIAssistant({ useStreaming = true }) {
   async function handleDeleteSession(e, sessionId) {
     e.stopPropagation();
     try {
-      const res = await authFetch(`/api/ai/sessions/${sessionId}`, { method: "DELETE" });
+      const res = await fetch(`${apiBaseUrl}/api/ai/sessions/${sessionId}`, {
+        method: "DELETE",
+      });
       await safeParseJson(res, "Deleting chat");
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
       if (sessionId === activeSessionId) {
@@ -228,6 +257,8 @@ export default function AIAssistant({ useStreaming = true }) {
 
     setErrorMsg("");
     const userMsg = { role: "user", content: text, id: nextId() };
+    // Drop any earlier assistant message that ended up empty (failed mid-stream)
+    // so a broken message never gets replayed to the backend.
     const cleanHistory = messages.filter((m) => m.content && m.content.trim());
     const history = [...cleanHistory, userMsg];
     setMessages(history);
@@ -245,6 +276,7 @@ export default function AIAssistant({ useStreaming = true }) {
     } catch (err) {
       console.error(err.message);
       setErrorMsg("Couldn't reach the assistant. Please try again.");
+      // Remove the empty placeholder assistant bubble left behind by a failed stream.
       setMessages((prev) => prev.filter((m) => m.content && m.content.trim()));
     } finally {
       setIsLoading(false);
@@ -252,32 +284,39 @@ export default function AIAssistant({ useStreaming = true }) {
   }
 
   async function fetchReply(apiHistory) {
-    const res = await authFetch("/api/ai/chat", {
+    const res = await fetch(`${apiBaseUrl}/api/ai/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: apiHistory, sessionId: activeSessionId }),
     });
     const data = await safeParseJson(res, "Sending message");
-    setMessages((prev) => [...prev, { role: "assistant", content: data.reply, id: nextId() }]);
-    if (data.sessionId) {
-      setActiveSessionId(data.sessionId);
-      if (isAuthenticated) fetchSessions();
-    }
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: data.reply, id: nextId() },
+    ]);
+    if (data.sessionId) setActiveSessionId(data.sessionId);
+    fetchSessions(); // refresh sidebar so the (new or updated) chat shows up
   }
 
   async function streamReply(apiHistory) {
-    const res = await authFetch("/api/ai/chat/stream", {
+    const res = await fetch(`${apiBaseUrl}/api/ai/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: apiHistory, sessionId: activeSessionId }),
     });
 
+    // A non-OK status or missing body (e.g. wrong URL / backend down /
+    // CORS block) means there's nothing to stream — fall back to the
+    // regular JSON endpoint instead of trying to read a broken stream.
     if (!res.ok || !res.body) {
       return fetchReply(apiHistory);
     }
 
     const assistantId = nextId();
-    setMessages((prev) => [...prev, { role: "assistant", content: "", id: assistantId }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", id: assistantId },
+    ]);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -290,7 +329,7 @@ export default function AIAssistant({ useStreaming = true }) {
       buffer += decoder.decode(value, { stream: true });
 
       const events = buffer.split("\n\n");
-      buffer = events.pop();
+      buffer = events.pop(); // keep incomplete chunk for next read
 
       for (const chunk of events) {
         const lines = chunk.split("\n");
@@ -304,13 +343,13 @@ export default function AIAssistant({ useStreaming = true }) {
         if (eventName === "delta") {
           accumulated += data.text;
           setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: accumulated } : m
+            )
           );
         } else if (eventName === "done") {
-          if (data.sessionId) {
-            setActiveSessionId(data.sessionId);
-            if (isAuthenticated) fetchSessions();
-          }
+          if (data.sessionId) setActiveSessionId(data.sessionId);
+          fetchSessions(); // refresh sidebar so the (new or updated) chat shows up
         } else if (eventName === "error") {
           throw new Error(data.message || "Stream error");
         }
@@ -325,11 +364,7 @@ export default function AIAssistant({ useStreaming = true }) {
     }
   }
 
-  function handleLogout() {
-    logout();
-    setSidebarOpen(false);
-  }
-
+  // Purely presentational — the title shown in the top bar of the main panel.
   const currentTitle = activeSessionId
     ? sessions.find((s) => s.sessionId === activeSessionId)?.title || "Conversation"
     : "New conversation";
@@ -337,28 +372,16 @@ export default function AIAssistant({ useStreaming = true }) {
   return (
     <>
       <style>{STYLES}</style>
-      <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
 
       <div className="nv-page">
-        {sidebarOpen && <div className="nv-backdrop" onClick={() => setSidebarOpen(false)} />}
-
         {/* ---------------- Left sidebar ---------------- */}
-        <aside className={`nv-sidebar ${sidebarOpen ? "nv-sidebar-open" : ""}`}>
-          <div className="nv-sidebar-top">
-            <div className="nv-brand">
-              <div className="nv-brand-mark">N</div>
-              <div className="nv-brand-text">
-                <div className="nv-brand-title">NOVA</div>
-                <div className="nv-brand-sub">Injective Research Assistant</div>
-              </div>
+        <aside className="nv-sidebar">
+          <div className="nv-brand">
+            <div className="nv-brand-mark">N</div>
+            <div className="nv-brand-text">
+              <div className="nv-brand-title">NOVA</div>
+              <div className="nv-brand-sub">Injective Research Assistant</div>
             </div>
-            <button
-              className="nv-sidebar-close"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close menu"
-            >
-              <CloseIcon />
-            </button>
           </div>
 
           <div className="nv-status-row">
@@ -379,14 +402,7 @@ export default function AIAssistant({ useStreaming = true }) {
           <div className="nv-history-section">
             <div className="nv-history-label">History</div>
             <div className="nv-history-list">
-              {!isAuthenticated ? (
-                <div className="nv-history-guest">
-                  <p>Sign in to save your chats and pick them up on any device.</p>
-                  <button className="nv-history-guest-btn" onClick={() => setAuthModalOpen(true)}>
-                    Sign in / Sign up
-                  </button>
-                </div>
-              ) : isHistoryLoading ? (
+              {isHistoryLoading ? (
                 <p className="nv-history-empty">Loading…</p>
               ) : sessions.length === 0 ? (
                 <p className="nv-history-empty">No previous chats yet.</p>
@@ -401,7 +417,9 @@ export default function AIAssistant({ useStreaming = true }) {
                   >
                     <span className="nv-history-item-main">
                       <span className="nv-history-item-title">{s.title}</span>
-                      <span className="nv-history-item-time">{formatSessionTime(s.updatedAt)}</span>
+                      <span className="nv-history-item-time">
+                        {formatSessionTime(s.updatedAt)}
+                      </span>
                     </span>
                     <span
                       className="nv-history-item-delete"
@@ -416,58 +434,16 @@ export default function AIAssistant({ useStreaming = true }) {
               )}
             </div>
           </div>
-
-          {/* ---------------- Account block ---------------- */}
-          <div className="nv-account">
-            {authLoading ? (
-              <div className="nv-account-loading">Loading…</div>
-            ) : isAuthenticated ? (
-              <div className="nv-account-row">
-                <div className="nv-account-avatar">{initials(user?.name)}</div>
-                <div className="nv-account-info">
-                  <div className="nv-account-name">{user?.name}</div>
-                  <div className="nv-account-email">{user?.email}</div>
-                </div>
-                <button className="nv-account-logout" onClick={handleLogout} aria-label="Sign out">
-                  <LogoutIcon />
-                </button>
-              </div>
-            ) : (
-              <button className="nv-account-signin-btn" onClick={() => setAuthModalOpen(true)}>
-                <UserIcon />
-                <span>Sign in</span>
-              </button>
-            )}
-          </div>
         </aside>
 
         {/* ---------------- Main chat panel ---------------- */}
         <main className="nv-main">
           <div className="nv-topbar">
-            <button
-              className="nv-hamburger"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-            >
-              <HamburgerIcon />
-            </button>
             <span className="nv-topbar-crumb">Injective / Assistant</span>
             <span className="nv-topbar-title">{currentTitle}</span>
-            {!isAuthenticated && !authLoading && (
-              <button className="nv-topbar-signin" onClick={() => setAuthModalOpen(true)}>
-                Sign in
-              </button>
-            )}
           </div>
 
           <div className="nv-body" ref={scrollRef}>
-            {!isAuthenticated && !authLoading && messages.length === 0 && (
-              <div className="nv-guest-banner">
-                You're chatting as a guest — this conversation won't be saved.{" "}
-                <button onClick={() => setAuthModalOpen(true)}>Sign in to save it</button>
-              </div>
-            )}
-
             {messages.length === 0 && !isSessionOpening && (
               <div className="nv-empty">
                 <p className="nv-empty-title">Ask me anything about Injective</p>
@@ -476,7 +452,11 @@ export default function AIAssistant({ useStreaming = true }) {
                 </p>
                 <div className="nv-chips">
                   {SUGGESTED_PROMPTS.map((p) => (
-                    <button key={p} className="nv-chip" onClick={() => sendMessage(p)}>
+                    <button
+                      key={p}
+                      className="nv-chip"
+                      onClick={() => sendMessage(p)}
+                    >
                       <ChevronIcon />
                       <span>{p}</span>
                     </button>
@@ -564,30 +544,6 @@ function ChevronIcon() {
     </svg>
   );
 }
-function HamburgerIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M4 6H20M4 12H20M4 18H20" strokeLinecap="round" />
-    </svg>
-  );
-}
-function UserIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M4.5 20C5.8 16.5 8.6 14.5 12 14.5C15.4 14.5 18.2 16.5 19.5 20" strokeLinecap="round" />
-    </svg>
-  );
-}
-function LogoutIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16 17L21 12L16 7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M21 12H9" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ---------------- Self-contained styles ----------------
 const STYLES = `
@@ -613,24 +569,13 @@ const STYLES = `
   --nv-font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 }
 
-* { box-sizing: border-box; }
-
 .nv-page {
   display: flex;
   width: 100%;
-  height: 100dvh;
+  height: 100vh;
   background: var(--nv-bg);
   font-family: var(--nv-font-body);
   overflow: hidden;
-  position: relative;
-}
-
-.nv-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 30;
 }
 
 /* ---------------- Sidebar ---------------- */
@@ -645,78 +590,135 @@ const STYLES = `
   gap: 18px;
 }
 
-.nv-sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.nv-sidebar-close { display: none; background: transparent; border: none; color: var(--nv-text-faint); cursor: pointer; padding: 4px; }
-
-.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; min-width: 0; }
+.nv-brand { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
 .nv-brand-mark {
-  width: 30px; height: 30px; flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   border: 1px solid var(--nv-hairline);
   border-radius: 6px;
   background: var(--nv-signal-dim);
   color: var(--nv-signal);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--nv-font-display);
-  font-weight: 700; font-size: 14px;
+  font-weight: 700;
+  font-size: 14px;
 }
 .nv-brand-title {
   font-family: var(--nv-font-display);
-  font-weight: 700; font-size: 14px; letter-spacing: 0.1em;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.1em;
   color: var(--nv-text);
 }
 .nv-brand-sub {
   font-family: var(--nv-font-mono);
-  font-size: 10.5px; color: var(--nv-text-faint); margin-top: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 10.5px;
+  color: var(--nv-text-faint);
+  margin-top: 2px;
 }
 
 .nv-status-row { display: flex; align-items: center; gap: 6px; padding: 0 3px; }
-.nv-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--nv-signal); animation: nv-live 1.8s infinite; flex-shrink: 0; }
-@keyframes nv-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.nv-status-label { font-family: var(--nv-font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nv-text-faint); }
+.nv-live-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--nv-signal);
+  animation: nv-live 1.8s infinite;
+  flex-shrink: 0;
+}
+@keyframes nv-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.nv-status-label {
+  font-family: var(--nv-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+}
 .nv-signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 10px; margin-left: auto; }
-.nv-signal-bars i { width: 2px; display: block; background: var(--nv-signal); opacity: 0.6; animation: nv-bars 1.2s ease-in-out infinite; }
+.nv-signal-bars i {
+  width: 2px;
+  display: block;
+  background: var(--nv-signal);
+  opacity: 0.6;
+  animation: nv-bars 1.2s ease-in-out infinite;
+}
 .nv-signal-bars i:nth-child(1) { height: 40%; animation-delay: 0s; }
 .nv-signal-bars i:nth-child(2) { height: 100%; animation-delay: 0.2s; }
 .nv-signal-bars i:nth-child(3) { height: 65%; animation-delay: 0.4s; }
-@keyframes nv-bars { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+@keyframes nv-bars {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
 
 .nv-new-chat-btn {
-  display: flex; align-items: center; gap: 8px;
-  background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text);
-  font-family: var(--nv-font-mono); font-size: 11.5px; font-weight: 500;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 10px 12px; border-radius: 6px; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--nv-hairline);
+  color: var(--nv-text);
+  font-family: var(--nv-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .nv-new-chat-btn:hover { border-color: var(--nv-signal); background: var(--nv-signal-dim); }
 .nv-new-chat-btn:focus-visible { outline: 2px solid var(--nv-signal); outline-offset: 2px; }
 
-.nv-history-section { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+.nv-history-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
 .nv-history-label {
-  font-family: var(--nv-font-mono); font-size: 10.5px; font-weight: 500;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--nv-text-faint);
-  padding: 0 6px 8px; border-bottom: 1px solid var(--nv-hairline-soft);
+  font-family: var(--nv-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+  padding: 0 6px 8px;
+  border-bottom: 1px solid var(--nv-hairline-soft);
 }
-.nv-history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding-right: 2px; }
-.nv-history-empty { font-family: var(--nv-font-mono); font-size: 11.5px; color: var(--nv-text-faint); padding: 6px; margin: 0; }
-
-.nv-history-guest { padding: 10px 8px; display: flex; flex-direction: column; gap: 10px; }
-.nv-history-guest p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--nv-text-dim); }
-.nv-history-guest-btn {
-  align-self: flex-start;
-  background: var(--nv-signal-dim); border: 1px solid var(--nv-signal); color: var(--nv-signal);
-  font-family: var(--nv-font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
-  padding: 8px 12px; border-radius: 6px; cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+.nv-history-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-right: 2px;
 }
-.nv-history-guest-btn:hover { background: var(--nv-signal); color: #061412; }
-
+.nv-history-empty {
+  font-family: var(--nv-font-mono);
+  font-size: 11.5px;
+  color: var(--nv-text-faint);
+  padding: 6px;
+  margin: 0;
+}
 .nv-history-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  text-align: left; background: transparent; border: none;
-  border-left: 2px solid transparent; border-bottom: 1px solid var(--nv-hairline-soft);
-  color: var(--nv-text); padding: 10px 8px 10px 10px; font-size: 12.5px; cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--nv-hairline-soft);
+  color: var(--nv-text);
+  padding: 10px 8px 10px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .nv-history-item:hover { background: rgba(255, 255, 255, 0.025); }
@@ -725,79 +727,91 @@ const STYLES = `
 .nv-history-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nv-history-item-time { font-family: var(--nv-font-mono); font-size: 10px; color: var(--nv-text-faint); }
 .nv-history-item-delete {
-  flex-shrink: 0; color: var(--nv-text-faint); display: flex; padding: 3px; border-radius: 4px;
-  opacity: 0; transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+  color: var(--nv-text-faint);
+  display: flex;
+  padding: 3px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 .nv-history-item:hover .nv-history-item-delete { opacity: 1; }
 .nv-history-item-delete:hover { color: var(--nv-danger); background: var(--nv-danger-dim); }
 
-/* ---------------- Account block (bottom of sidebar) ---------------- */
-.nv-account { border-top: 1px solid var(--nv-hairline-soft); padding-top: 12px; flex-shrink: 0; }
-.nv-account-loading { font-family: var(--nv-font-mono); font-size: 11px; color: var(--nv-text-faint); padding: 6px; }
-.nv-account-row { display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
-.nv-account-avatar {
-  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-  background: var(--nv-signal-dim); color: var(--nv-signal); border: 1px solid var(--nv-hairline);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--nv-font-mono); font-size: 12px; font-weight: 600;
-}
-.nv-account-info { flex: 1; min-width: 0; }
-.nv-account-name { font-size: 12.5px; color: var(--nv-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nv-account-email { font-family: var(--nv-font-mono); font-size: 10px; color: var(--nv-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nv-account-logout {
-  flex-shrink: 0; background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text-faint);
-  padding: 7px; border-radius: 6px; cursor: pointer; display: flex;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-.nv-account-logout:hover { color: var(--nv-danger); border-color: var(--nv-danger); background: var(--nv-danger-dim); }
-.nv-account-signin-btn {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: var(--nv-signal-dim); border: 1px solid var(--nv-signal); color: var(--nv-signal);
-  font-family: var(--nv-font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 10px 12px; border-radius: 6px; cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.nv-account-signin-btn:hover { background: var(--nv-signal); color: #061412; }
-
 /* ---------------- Main chat area ---------------- */
-.nv-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--nv-panel); }
+.nv-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--nv-panel);
+}
 
 .nv-topbar {
-  display: flex; align-items: center; gap: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   padding: 15px clamp(16px, 8vw, 160px) 13px;
-  border-bottom: 1px solid var(--nv-hairline); flex-shrink: 0;
+  border-bottom: 1px solid var(--nv-hairline);
+  flex-shrink: 0;
 }
-.nv-hamburger { display: none; background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text); padding: 7px; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
-.nv-topbar-crumb { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); flex-shrink: 0; }
-.nv-topbar-title { font-family: var(--nv-font-body); font-size: 13px; font-weight: 600; color: var(--nv-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.nv-topbar-signin {
-  flex-shrink: 0; background: var(--nv-signal-dim); border: 1px solid var(--nv-signal); color: var(--nv-signal);
-  font-family: var(--nv-font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
-  padding: 7px 11px; border-radius: 6px; cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
+.nv-topbar-crumb {
+  font-family: var(--nv-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+  flex-shrink: 0;
 }
-.nv-topbar-signin:hover { background: var(--nv-signal); color: #061412; }
+.nv-topbar-title {
+  font-family: var(--nv-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nv-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-.nv-body { flex: 1; overflow-y: auto; padding: 26px clamp(16px, 8vw, 160px); display: flex; flex-direction: column; gap: 18px; }
-
-.nv-guest-banner {
-  max-width: 740px; width: 100%; margin: 0 auto;
-  font-size: 12.5px; line-height: 1.6; color: var(--nv-text-dim);
-  background: var(--nv-amber-dim); border: 1px solid rgba(232, 163, 61, 0.25);
-  padding: 10px 13px; border-radius: 8px;
-}
-.nv-guest-banner button {
-  background: none; border: none; color: var(--nv-amber); text-decoration: underline;
-  cursor: pointer; font-size: 12.5px; padding: 0; font-family: inherit;
+.nv-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 26px clamp(16px, 8vw, 160px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .nv-empty { max-width: 560px; margin: 7vh auto 0; text-align: left; }
-.nv-empty-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.01em; color: var(--nv-text); margin: 0 0 8px; }
-.nv-empty-sub { font-family: var(--nv-font-body); color: var(--nv-text-dim); font-size: 14px; margin: 0 0 22px; line-height: 1.65; }
+.nv-empty-title {
+  font-family: var(--nv-font-display);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--nv-text);
+  margin: 0 0 8px;
+}
+.nv-empty-sub {
+  font-family: var(--nv-font-body);
+  color: var(--nv-text-dim);
+  font-size: 14px;
+  margin: 0 0 22px;
+  line-height: 1.65;
+}
 .nv-chips { display: flex; flex-direction: column; gap: 8px; }
 .nv-chip {
-  display: flex; align-items: center; gap: 9px; text-align: left;
-  background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text);
-  padding: 12px 14px; border-radius: 8px; font-family: var(--nv-font-body); font-size: 13.5px; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--nv-hairline);
+  color: var(--nv-text);
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-family: var(--nv-font-body);
+  font-size: 13.5px;
+  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .nv-chip svg { flex-shrink: 0; color: var(--nv-text-faint); transition: transform 0.15s ease, color 0.15s ease; }
@@ -808,43 +822,105 @@ const STYLES = `
 .nv-row { display: flex; flex-direction: column; max-width: 740px; width: 100%; margin: 0 auto; }
 .nv-row-user { align-items: flex-end; }
 .nv-row-assistant { align-items: flex-start; }
-.nv-row-label { font-family: var(--nv-font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nv-text-faint); margin: 0 0 7px 13px; }
+.nv-row-label {
+  font-family: var(--nv-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+  margin: 0 0 7px 13px;
+}
 
 .nv-bubble { font-size: 14px; line-height: 1.7; color: var(--nv-text); word-wrap: break-word; }
 .nv-bubble p { margin: 0 0 5px; }
 .nv-bubble p:last-child { margin-bottom: 0; }
-.nv-bubble-user { max-width: 78%; background: var(--nv-amber-dim); border: 1px solid var(--nv-hairline); border-right: 2px solid var(--nv-amber); border-radius: 8px 3px 8px 8px; padding: 11px 14px; }
-.nv-bubble-assistant { max-width: 100%; padding-left: 13px; border-left: 2px solid var(--nv-signal); }
+.nv-bubble-user {
+  max-width: 78%;
+  background: var(--nv-amber-dim);
+  border: 1px solid var(--nv-hairline);
+  border-right: 2px solid var(--nv-amber);
+  border-radius: 8px 3px 8px 8px;
+  padding: 11px 14px;
+}
+.nv-bubble-assistant {
+  max-width: 100%;
+  padding-left: 13px;
+  border-left: 2px solid var(--nv-signal);
+}
 .nv-bullet { display: flex; gap: 8px; margin: 3px 0; }
 .nv-bullet-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--nv-signal); margin-top: 8px; flex-shrink: 0; }
 
 .nv-typing { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.nv-typing-label { font-family: var(--nv-font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); }
-.nv-cursor { width: 6px; height: 14px; background: var(--nv-signal); display: inline-block; animation: nv-blink 1s steps(1, end) infinite; }
-@keyframes nv-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.nv-typing-label {
+  font-family: var(--nv-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+}
+.nv-cursor {
+  width: 6px;
+  height: 14px;
+  background: var(--nv-signal);
+  display: inline-block;
+  animation: nv-blink 1s steps(1, end) infinite;
+}
+@keyframes nv-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
 
 .nv-error {
-  max-width: 740px; width: 100%; margin: 0 auto; font-family: var(--nv-font-mono); font-size: 12px;
-  color: var(--nv-danger); background: var(--nv-danger-dim); border: 1px solid rgba(229, 100, 95, 0.25);
-  padding: 9px 11px; border-radius: 6px;
+  max-width: 740px;
+  width: 100%;
+  margin: 0 auto;
+  font-family: var(--nv-font-mono);
+  font-size: 12px;
+  color: var(--nv-danger);
+  background: var(--nv-danger-dim);
+  border: 1px solid rgba(229, 100, 95, 0.25);
+  padding: 9px 11px;
+  border-radius: 6px;
 }
 
 .nv-input-bar {
-  display: flex; align-items: flex-end; gap: 10px;
-  padding: 14px clamp(16px, 8vw, 160px) max(22px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--nv-hairline); background: rgba(255, 255, 255, 0.012); flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px clamp(16px, 8vw, 160px) 22px;
+  border-top: 1px solid var(--nv-hairline);
+  background: rgba(255, 255, 255, 0.012);
+  flex-shrink: 0;
 }
 .nv-textarea {
-  flex: 1; resize: none; background: var(--nv-bg); border: 1px solid var(--nv-hairline); border-radius: 8px;
-  color: var(--nv-text); padding: 12px 14px; font-family: var(--nv-font-body); font-size: 14px;
-  outline: none; max-height: 120px; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  flex: 1;
+  resize: none;
+  background: var(--nv-bg);
+  border: 1px solid var(--nv-hairline);
+  border-radius: 8px;
+  color: var(--nv-text);
+  padding: 12px 14px;
+  font-family: var(--nv-font-body);
+  font-size: 14px;
+  outline: none;
+  max-height: 120px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .nv-textarea::placeholder { color: var(--nv-text-faint); }
 .nv-textarea:focus { border-color: var(--nv-signal); box-shadow: 0 0 0 3px var(--nv-signal-dim); }
 .nv-send-btn {
-  width: 42px; height: 42px; border-radius: 8px; border: 1px solid var(--nv-signal);
-  background: var(--nv-signal-dim); color: var(--nv-signal);
-  display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--nv-signal);
+  background: var(--nv-signal-dim);
+  color: var(--nv-signal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 .nv-send-btn:hover:not(:disabled) { background: var(--nv-signal); color: #061412; }
@@ -853,48 +929,17 @@ const STYLES = `
 
 /* Themed scrollbars */
 .nv-history-list::-webkit-scrollbar, .nv-body::-webkit-scrollbar { width: 8px; }
-.nv-history-list::-webkit-scrollbar-thumb, .nv-body::-webkit-scrollbar-thumb { background: var(--nv-hairline); border-radius: 4px; }
+.nv-history-list::-webkit-scrollbar-thumb, .nv-body::-webkit-scrollbar-thumb {
+  background: var(--nv-hairline);
+  border-radius: 4px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .nv-live-dot, .nv-signal-bars i, .nv-cursor { animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
-/* ---------------- Responsive breakpoints ---------------- */
-
-@media (max-width: 960px) {
-  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 24px; padding-right: 24px; }
-  .nv-sidebar { width: 240px; }
-}
-
-@media (max-width: 860px) {
-  .nv-sidebar {
-    position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
-    width: min(82vw, 300px);
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-    box-shadow: 8px 0 24px rgba(0,0,0,0.4);
-    padding-top: max(20px, env(safe-area-inset-top));
-  }
-  .nv-sidebar-open { transform: translateX(0); }
-  .nv-sidebar-close { display: block; }
-  .nv-backdrop { display: block; }
-  .nv-hamburger { display: flex; align-items: center; justify-content: center; }
-  .nv-topbar-crumb { display: none; }
-}
-
-@media (max-width: 640px) {
+@media (max-width: 720px) {
+  .nv-sidebar { width: 220px; padding: 16px 10px; }
   .nv-body, .nv-input-bar, .nv-topbar { padding-left: 14px; padding-right: 14px; }
-  .nv-topbar { padding-top: max(12px, env(safe-area-inset-top)); }
-  .nv-empty { margin-top: 4vh; }
-  .nv-empty-title { font-size: 19px; }
-  .nv-empty-sub { font-size: 13px; }
-  .nv-bubble-user { max-width: 88%; }
-  .nv-bubble, .nv-chip { font-size: 13.5px; }
-  .nv-topbar-signin { padding: 6px 9px; font-size: 10px; }
-}
-
-@media (max-width: 400px) {
-  .nv-send-btn { width: 38px; height: 38px; }
-  .nv-textarea { font-size: 13.5px; padding: 10px 12px; }
 }
 `;
