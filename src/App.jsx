@@ -1,4 +1,5 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import AuthButton from "./components/AuthButton.jsx";
 import Home from "./pages/Home.jsx";
@@ -39,17 +40,25 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || undefined;
 export default function App() {
   const location = useLocation();
   const communityActive = location.pathname === communityLink.to;
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile menu automatically whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   return (
     <AuthProvider apiBaseUrl={API_BASE_URL}>
       <div className="app-shell">
         <style>{NAV_STYLES}</style>
 
-        {/* Floating glass pill navbar */}
+        {/* Static navbar — sits in normal document flow, scrolls away
+            with the page instead of sticking/floating on scroll. */}
         <div className="gnav-wrap">
           <div className="gnav-border">
             <nav className="gnav">
               <span className="gnav-glow" aria-hidden="true" />
+              <span className="gnav-accent-bar" aria-hidden="true" />
 
               <Link to="/" className="gnav-brand">
                 <span className="gnav-mark">
@@ -62,6 +71,7 @@ export default function App() {
                 </span>
               </Link>
 
+              {/* Desktop links */}
               <div className="gnav-links">
                 {navLinks.map((link) => {
                   const active = location.pathname === link.to;
@@ -102,8 +112,44 @@ export default function App() {
                     <path d="M7 17L17 7M17 7H9M17 7V15" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </Link>
+
+                {/* Mobile hamburger toggle */}
+                <button
+                  className={`gnav-burger ${mobileOpen ? "gnav-burger-open" : ""}`}
+                  onClick={() => setMobileOpen((v) => !v)}
+                  aria-label="Toggle menu"
+                  aria-expanded={mobileOpen}
+                >
+                  <span />
+                  <span />
+                  <span />
+                </button>
               </div>
             </nav>
+
+            {/* Mobile dropdown menu */}
+            <div className={`gnav-mobile-menu ${mobileOpen ? "gnav-mobile-menu-open" : ""}`}>
+              {navLinks.map((link) => {
+                const active = location.pathname === link.to;
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={`gnav-mobile-link ${active ? "gnav-mobile-link-active" : ""}`}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+              <Link
+                to={communityLink.to}
+                className="gnav-mobile-cta"
+                onClick={() => setMobileOpen(false)}
+              >
+                {communityLink.label}
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -164,23 +210,25 @@ const NAV_STYLES = `
 }
 .app-shell * { box-sizing: border-box; }
 
-/* ---------------- Floating glass pill navbar ---------------- */
+/* ---------------- Navbar wrapper ----------------
+   position: relative (NOT sticky/fixed) — the navbar
+   lives in normal page flow and scrolls away with the
+   rest of the content, staying exactly where it was
+   placed instead of floating on top while scrolling. */
 .gnav-wrap {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 50;
   display: flex;
   justify-content: center;
   padding: clamp(10px, 2vw, 18px) clamp(10px, 3vw, 20px) 0;
-  pointer-events: none;
 }
 
 .gnav-border {
-  pointer-events: auto;
+  position: relative;
   width: 100%;
   max-width: 1226px;
   padding: 1.5px;
-  border-radius: 999px;
+  border-radius: 26px;
   background: linear-gradient(
     115deg,
     rgba(71, 214, 196, 0.9),
@@ -202,20 +250,29 @@ const NAV_STYLES = `
 }
 
 .gnav {
-  pointer-events: auto;
   position: relative;
   width: 100%;
   display: flex;
   align-items: center;
   gap: clamp(10px, 2.4vw, 22px);
-  flex-wrap: wrap;
   padding: 8px 10px 8px 16px;
-  border-radius: 999px;
-  background: rgba(11, 13, 16, 0.86);
+  border-radius: 24px;
+  background: rgba(11, 13, 16, 0.9);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
+}
+
+/* Unique touch: angled accent bar along the very top edge */
+.gnav-accent-bar {
+  position: absolute;
+  top: 0; left: 6%;
+  width: 88%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--nv-signal), var(--nv-violet), transparent);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .gnav-glow {
@@ -314,7 +371,6 @@ const NAV_STYLES = `
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.03);
   border-radius: 999px;
@@ -345,6 +401,7 @@ const NAV_STYLES = `
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .gnav-status {
@@ -415,6 +472,80 @@ const NAV_STYLES = `
   outline-offset: 2px;
 }
 
+/* ---------------- Mobile hamburger button ---------------- */
+.gnav-burger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--nv-hairline);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.gnav-burger span {
+  display: block;
+  width: 16px;
+  height: 1.6px;
+  background: var(--nv-text);
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.gnav-burger-open span:nth-child(1) { transform: translateY(5.6px) rotate(45deg); }
+.gnav-burger-open span:nth-child(2) { opacity: 0; }
+.gnav-burger-open span:nth-child(3) { transform: translateY(-5.6px) rotate(-45deg); }
+
+/* ---------------- Mobile dropdown menu ---------------- */
+.gnav-mobile-menu {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 12px;
+  border-radius: 0 0 22px 22px;
+  background: rgba(11, 13, 16, 0.97);
+  transition: max-height 0.25s ease, padding 0.25s ease;
+}
+.gnav-mobile-menu-open {
+  max-height: 420px;
+  padding: 10px 12px 16px;
+}
+.gnav-mobile-link {
+  font-family: var(--nv-font-body);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--nv-text-dim);
+  text-decoration: none;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border-left: 2px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.gnav-mobile-link:hover { background: rgba(255, 255, 255, 0.05); color: var(--nv-text); }
+.gnav-mobile-link-active {
+  color: var(--nv-signal);
+  border-left-color: var(--nv-signal);
+  background: var(--nv-signal-dim);
+  font-weight: 600;
+}
+.gnav-mobile-cta {
+  margin-top: 6px;
+  text-align: center;
+  font-family: var(--nv-font-display);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #061412;
+  text-decoration: none;
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--nv-signal), var(--nv-violet) 130%);
+}
+
 .app-main { flex: 1; }
 
 .app-footer {
@@ -427,18 +558,25 @@ const NAV_STYLES = `
   color: var(--nv-text-faint);
 }
 
-/* Tablet: wrap links onto their own row under the brand/status */
+/* ---------------- Responsive breakpoints ---------------- */
+
+/* Tablet: hide the inline links row, switch to hamburger + dropdown */
 @media (max-width: 900px) {
-  .gnav { border-radius: 24px; justify-content: center; }
-  .gnav-brand { margin-right: 0; flex: 1; }
-  .gnav-links { order: 3; width: 100%; justify-content: center; }
-  .gnav-right { order: 2; }
+  .gnav { border-radius: 20px; }
+  .gnav-links { display: none; }
+  .gnav-burger { display: flex; }
+  .gnav-mobile-menu { display: flex; }
 }
 
 @media (max-width: 480px) {
   .gnav-sub { display: none; }
   .gnav-status { display: none; }
-  .gnav-link { padding: 6px 10px; font-size: 12px; }
-  .gnav-cta { padding: 9px 16px; font-size: 13px; }
+  .gnav-cta { padding: 8px 14px; font-size: 12.5px; }
+  .gnav-title { font-size: 11.5px; }
+}
+
+@media (max-width: 360px) {
+  .gnav-cta span:not(.gnav-cta-dot) { display: none; }
+  .gnav-cta { padding: 9px 12px; }
 }
 `;
