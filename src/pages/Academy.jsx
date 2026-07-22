@@ -32,24 +32,23 @@
  *   POST /api/academy/enroll       -> { name, email, trackSlug } -> enrolls a learner
  *
  * Props:
- *   apiBaseUrl?: string — defaults to the deployed backend's URL via
- *   VITE_API_BASE_URL (falls back to the known production backend if the
- *   env var isn't set). The frontend and backend are two separate Vercel
- *   projects/domains, so this CANNOT default to '' (same-origin) — a
- *   same-origin call would hit the frontend's own domain, which has no
- *   /api/academy/... routes, and silently fail. Set VITE_API_BASE_URL in
- *   the frontend's Vercel Environment Variables to override.
+ *   apiBaseUrl?: string — defaults to the live backend origin. If the
+ *   frontend and backend are ever deployed on the SAME domain (e.g.
+ *   Vercel rewrites/proxy is set up), you can override this back to
+ *   '' so calls stay same-origin instead.
  * ------------------------------------------------------------------
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 
-// The frontend (injective-pakistan-frontend-...vercel.app) and backend
-// (injective-pakistan-backend-2gbb.vercel.app) are separate deployments.
-// Reading VITE_API_BASE_URL lets you override this per-environment
-// (e.g. localhost:5000 while developing) without touching this file.
-const DEFAULT_API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "https://injective-pakistan-backend-2gbb.vercel.app";
+// ---------------- API base URL ----------------
+// The frontend and backend are deployed on two different Vercel
+// domains, so same-origin ("") fetches to /api/academy/... were hitting
+// the FRONTEND's own domain (which has no such route) and getting back
+// Vercel's HTML "page not found" response instead of JSON — hence the
+// "Unexpected token '<'... is not valid JSON" errors. Pointing this at
+// the actual backend origin fixes that (same pattern as Home.jsx).
+const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 // ---------------- Fallback data (shown instantly, replaced once the API responds) ----------------
 const FALLBACK_STATS = {
