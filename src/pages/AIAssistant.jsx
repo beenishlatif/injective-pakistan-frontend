@@ -1,5 +1,5 @@
 /**
- * AIAssistant.jsx
+ * AIAssistant.jsx (pages/)
  * ------------------------------------------------------------------
  * Full-page AI assistant for the Injective website.
  * Answers any Injective-related (or general) question by calling the
@@ -8,54 +8,24 @@
  *
  * Auth:
  *   - Guests can chat freely, but nothing is saved — closing/refreshing
- *     loses the conversation, and the History sidebar is replaced with
- *     a "sign in to save your chats" prompt.
+ *     loses the conversation, and the History sidebar shows a
+ *     "sign in to save your chats" prompt instead of trying to load
+ *     history (which requires auth on the backend).
  *   - Signed-in users (email/password or Google) get every chat
  *     persisted on the backend, scoped to their own account.
- *   - Wrap this component in <AuthProvider> (see AuthContext.jsx).
+ *   - Requires <AuthProvider> to be wrapping the app (see App.jsx).
  *
  * Responsive:
  *   - Desktop: fixed sidebar + main panel side by side.
  *   - Tablet/mobile (<= 860px): sidebar becomes an off-canvas drawer,
  *     opened via a hamburger button in the top bar, with a tap-outside
  *     overlay to close it.
- *
- * Drop this file into your React project (e.g. src/components/) and
- * render <AIAssistant /> as a full page/route (e.g. /assistant),
- * not as a floating widget.
- *
- * No external UI library required — styling is self-contained below,
- * so it works whether or not Tailwind is configured in the host project.
- *
- * Props:
- *   apiBaseUrl?: string   — defaults to the deployed backend origin
- *                           (https://injective-pakistan-backend-2gbb.vercel.app).
- *   useStreaming?: bool   — defaults to true (falls back to normal chat on error)
- *
- * History is persisted on the backend (ChatSession/MongoDB) via:
- *   GET    /api/ai/sessions            -> list saved chats (auth required)
- *   GET    /api/ai/sessions/:sessionId -> load one chat's messages
- *   DELETE /api/ai/sessions/:sessionId -> delete a chat
- * `sessionId` is sent along with every /chat and /chat/stream call so
- * the backend knows which conversation to append to (or creates a
- * new one and returns its id when sessionId is null and the caller
- * is signed in).
- *
- * IMPORTANT — cross-origin setup:
- * The frontend and backend are on different domains, so your Express
- * backend MUST send CORS headers allowing the frontend origin AND the
- * Authorization header:
- *   app.use(cors({
- *     origin: "https://injective-pakistan-frontend-twj2.vercel.app",
- *     credentials: true,
- *     allowedHeaders: ["Content-Type", "Authorization"],
- *   }));
  * ------------------------------------------------------------------
  */
 
 import { useState, useRef, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
-import AuthModal from "./AuthModal";
+import { useAuth } from "../context/AuthContext.jsx";
+import AuthModal from "../components/AuthModal.jsx";
 
 const SUGGESTED_PROMPTS = [
   "What is Injective in simple terms?",
@@ -147,7 +117,7 @@ async function safeParseJson(res, context) {
 }
 
 export default function AIAssistant({ useStreaming = true }) {
-  const { user, isAuthenticated, isLoading: authLoading, authFetch, logout, apiBaseUrl } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, authFetch, logout } = useAuth();
 
   const [messages, setMessages] = useState([]); // {role, content, id}
   const [input, setInput] = useState("");
@@ -370,7 +340,6 @@ export default function AIAssistant({ useStreaming = true }) {
       <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
 
       <div className="nv-page">
-        {/* Mobile-only backdrop for the off-canvas sidebar */}
         {sidebarOpen && <div className="nv-backdrop" onClick={() => setSidebarOpen(false)} />}
 
         {/* ---------------- Left sidebar ---------------- */}
@@ -882,46 +851,9 @@ const STYLES = `
 .nv-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .nv-send-btn:focus-visible { outline: 2px solid var(--nv-signal); outline-offset: 2px; }
 
-/* ---------------- Auth modal ---------------- */
-.nv-auth-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px);
-  display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px;
-}
-.nv-auth-modal {
-  width: 100%; max-width: 380px; background: var(--nv-sidebar); border: 1px solid var(--nv-hairline);
-  border-radius: 12px; padding: 26px 22px 22px; position: relative; font-family: var(--nv-font-body);
-  max-height: 92vh; overflow-y: auto;
-}
-.nv-auth-close { position: absolute; top: 12px; right: 12px; background: transparent; border: none; color: var(--nv-text-faint); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
-.nv-auth-close:hover { color: var(--nv-text); background: rgba(255,255,255,0.05); }
-.nv-auth-header { margin-bottom: 18px; }
-.nv-auth-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 19px; color: var(--nv-text); margin-bottom: 6px; }
-.nv-auth-sub { font-size: 12.5px; color: var(--nv-text-dim); line-height: 1.6; }
-.nv-google-btn { display: flex; justify-content: center; margin-bottom: 4px; }
-.nv-auth-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; }
-.nv-auth-divider::before, .nv-auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--nv-hairline); }
-.nv-auth-divider span { font-family: var(--nv-font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nv-text-faint); }
-.nv-auth-form { display: flex; flex-direction: column; gap: 10px; }
-.nv-auth-input {
-  background: var(--nv-bg); border: 1px solid var(--nv-hairline); border-radius: 8px; color: var(--nv-text);
-  padding: 11px 13px; font-family: var(--nv-font-body); font-size: 13.5px; outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.nv-auth-input::placeholder { color: var(--nv-text-faint); }
-.nv-auth-input:focus { border-color: var(--nv-signal); box-shadow: 0 0 0 3px var(--nv-signal-dim); }
-.nv-auth-error { font-family: var(--nv-font-mono); font-size: 11.5px; color: var(--nv-danger); background: var(--nv-danger-dim); border: 1px solid rgba(229, 100, 95, 0.25); padding: 8px 10px; border-radius: 6px; }
-.nv-auth-submit {
-  background: var(--nv-signal); border: none; color: #061412; font-weight: 600; font-size: 13.5px;
-  padding: 11px; border-radius: 8px; cursor: pointer; margin-top: 4px; transition: opacity 0.15s ease;
-}
-.nv-auth-submit:hover { opacity: 0.9; }
-.nv-auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-.nv-auth-switch { text-align: center; font-size: 12.5px; color: var(--nv-text-dim); margin-top: 16px; }
-.nv-auth-switch button { background: none; border: none; color: var(--nv-signal); cursor: pointer; font-size: 12.5px; padding: 0; font-family: inherit; text-decoration: underline; }
-
 /* Themed scrollbars */
-.nv-history-list::-webkit-scrollbar, .nv-body::-webkit-scrollbar, .nv-auth-modal::-webkit-scrollbar { width: 8px; }
-.nv-history-list::-webkit-scrollbar-thumb, .nv-body::-webkit-scrollbar-thumb, .nv-auth-modal::-webkit-scrollbar-thumb { background: var(--nv-hairline); border-radius: 4px; }
+.nv-history-list::-webkit-scrollbar, .nv-body::-webkit-scrollbar { width: 8px; }
+.nv-history-list::-webkit-scrollbar-thumb, .nv-body::-webkit-scrollbar-thumb { background: var(--nv-hairline); border-radius: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .nv-live-dot, .nv-signal-bars i, .nv-cursor { animation: none !important; opacity: 1 !important; transform: none !important; }
@@ -929,13 +861,11 @@ const STYLES = `
 
 /* ---------------- Responsive breakpoints ---------------- */
 
-/* Tablet */
 @media (max-width: 960px) {
   .nv-body, .nv-input-bar, .nv-topbar { padding-left: 24px; padding-right: 24px; }
   .nv-sidebar { width: 240px; }
 }
 
-/* Mobile: sidebar becomes an off-canvas drawer */
 @media (max-width: 860px) {
   .nv-sidebar {
     position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
@@ -961,7 +891,6 @@ const STYLES = `
   .nv-bubble-user { max-width: 88%; }
   .nv-bubble, .nv-chip { font-size: 13.5px; }
   .nv-topbar-signin { padding: 6px 9px; font-size: 10px; }
-  .nv-auth-modal { padding: 22px 16px 18px; }
 }
 
 @media (max-width: 400px) {

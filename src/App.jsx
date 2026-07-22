@@ -1,4 +1,5 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext.jsx";
 import Home from "./pages/Home.jsx";
 import Ecosystem from "./pages/Ecosystem.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -29,92 +30,94 @@ export default function App() {
   const communityActive = location.pathname === communityLink.to;
 
   return (
-    <div className="app-shell">
-      <style>{NAV_STYLES}</style>
+    <AuthProvider apiBaseUrl={API_BASE_URL}>
+      <div className="app-shell">
+        <style>{NAV_STYLES}</style>
 
-      {/* Floating glass pill navbar */}
-      <div className="gnav-wrap">
-        <div className="gnav-border">
-          <nav className="gnav">
-            <span className="gnav-glow" aria-hidden="true" />
+        {/* Floating glass pill navbar */}
+        <div className="gnav-wrap">
+          <div className="gnav-border">
+            <nav className="gnav">
+              <span className="gnav-glow" aria-hidden="true" />
 
-            <Link to="/" className="gnav-brand">
-              <span className="gnav-mark">
-                <span className="gnav-mark-ring" aria-hidden="true" />
-                <span className="gnav-mark-inner">N</span>
-              </span>
-              <span className="gnav-brand-text">
-                <span className="gnav-title">INJECTIVE PK</span>
-                <span className="gnav-sub">Community Hub</span>
-              </span>
-            </Link>
+              <Link to="/" className="gnav-brand">
+                <span className="gnav-mark">
+                  <span className="gnav-mark-ring" aria-hidden="true" />
+                  <span className="gnav-mark-inner">N</span>
+                </span>
+                <span className="gnav-brand-text">
+                  <span className="gnav-title">INJECTIVE PK</span>
+                  <span className="gnav-sub">Community Hub</span>
+                </span>
+              </Link>
 
-            <div className="gnav-links">
-              {navLinks.map((link) => {
-                const active = location.pathname === link.to;
-                return (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    className={`gnav-link ${active ? "gnav-link-active" : ""}`}
-                  >
-                    {link.label}
-                  </Link>
-                );
-              })}
-            </div>
-
-            <div className="gnav-right">
-              <div className="gnav-status" aria-hidden="true">
-                <span className="gnav-live-dot" />
-                <span>LIVE</span>
+              <div className="gnav-links">
+                {navLinks.map((link) => {
+                  const active = location.pathname === link.to;
+                  return (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      className={`gnav-link ${active ? "gnav-link-active" : ""}`}
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
               </div>
 
-              <Link
-                to={communityLink.to}
-                className={`gnav-cta ${communityActive ? "gnav-cta-active" : ""}`}
-              >
-                <span className="gnav-cta-dot" />
-                {communityLink.label}
-                <svg
-                  className="gnav-cta-arrow"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  aria-hidden="true"
+              <div className="gnav-right">
+                <div className="gnav-status" aria-hidden="true">
+                  <span className="gnav-live-dot" />
+                  <span>LIVE</span>
+                </div>
+
+                <Link
+                  to={communityLink.to}
+                  className={`gnav-cta ${communityActive ? "gnav-cta-active" : ""}`}
                 >
-                  <path d="M7 17L17 7M17 7H9M17 7V15" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-            </div>
-          </nav>
+                  <span className="gnav-cta-dot" />
+                  {communityLink.label}
+                  <svg
+                    className="gnav-cta-arrow"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    aria-hidden="true"
+                  >
+                    <path d="M7 17L17 7M17 7H9M17 7V15" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </Link>
+              </div>
+            </nav>
+          </div>
         </div>
+
+        {/* Page content */}
+        <main className="app-main">
+          <Routes>
+            <Route path="/" element={<Home apiBaseUrl={API_BASE_URL} />} />
+            <Route
+              path="/ecosystem"
+              element={<Ecosystem apiBaseUrl={API_BASE_URL} />}
+            />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/academy" element={<Academy />} />
+            <Route path="/game" element={<Game />} />
+            <Route path="/community" element={<Community />} />
+          </Routes>
+        </main>
+
+        {/* Footer */}
+        <footer className="app-footer">
+          Injective Pakistan Hub — Community built, open source. ❤️ Pakistan
+        </footer>
       </div>
-
-      {/* Page content */}
-      <main className="app-main">
-        <Routes>
-          <Route path="/" element={<Home apiBaseUrl={API_BASE_URL} />} />
-          <Route
-            path="/ecosystem"
-            element={<Ecosystem apiBaseUrl={API_BASE_URL} />}
-          />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/ai-assistant" element={<AIAssistant />} />
-          <Route path="/academy" element={<Academy />} />
-          <Route path="/game" element={<Game />} />
-          <Route path="/community" element={<Community />} />
-        </Routes>
-      </main>
-
-      {/* Footer */}
-      <footer className="app-footer">
-        Injective Pakistan Hub — Community built, open source. ❤️ Pakistan
-      </footer>
-    </div>
+    </AuthProvider>
   );
 }
 
@@ -154,10 +157,9 @@ const NAV_STYLES = `
   display: flex;
   justify-content: center;
   padding: clamp(10px, 2vw, 18px) clamp(10px, 3vw, 20px) 0;
-  pointer-events: none; /* let clicks pass through the padding area */
+  pointer-events: none;
 }
 
-/* Slim animated gradient ring wrapping the whole pill — the "unique" edge glow */
 .gnav-border {
   pointer-events: auto;
   width: 100%;
@@ -201,7 +203,6 @@ const NAV_STYLES = `
   overflow: hidden;
 }
 
-/* Soft animated glow sweeping behind the pill for extra polish */
 .gnav-glow {
   position: absolute;
   inset: -40% -10%;
