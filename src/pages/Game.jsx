@@ -42,8 +42,17 @@ const THEME_FONTS = `
 
 /* ============================================================
    CONFIG
+   ------------------------------------------------------------
+   Same fix as Home.jsx: don't rely solely on VITE_API_URL. If
+   that env var isn't set/picked up at build/deploy time, this
+   used to silently fall back to http://127.0.0.1:5000 — which
+   only works locally and breaks all API calls in production
+   (that's why it worked locally but not after deployment).
+   Hardcode the real deployed backend origin as the default,
+   same as DEFAULT_API_BASE_URL in Home.jsx.
    ============================================================ */
-const API_ORIGIN = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+const DEFAULT_API_ORIGIN = "https://injective-pakistan-backend-2gbb.vercel.app";
+const API_ORIGIN = import.meta.env.VITE_API_URL || DEFAULT_API_ORIGIN;
 const API_BASE = `${API_ORIGIN}/api/game`;
 const AUTH_BASE = `${API_ORIGIN}/api/auth`;
 const X_LOGIN_PATH = "x/login"; // only provider for now
