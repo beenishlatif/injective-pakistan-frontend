@@ -54,8 +54,6 @@ const THEME_FONTS = `
 const DEFAULT_API_ORIGIN = "https://injective-pakistan-backend-2gbb.vercel.app";
 const API_ORIGIN = import.meta.env.VITE_API_URL || DEFAULT_API_ORIGIN;
 const API_BASE = `${API_ORIGIN}/api/game`;
-const AUTH_BASE = `${API_ORIGIN}/api/auth`;
-const X_LOGIN_PATH = "x/login"; // only provider for now
 
 /**
  * FIX (session shared with AI Assistant / rest of the app):
@@ -68,6 +66,9 @@ const X_LOGIN_PATH = "x/login"; // only provider for now
  * the AI Assistant page (and vice versa).
  *
  * Using the exact same key here makes both pages share one session.
+ * The game now simply relies on whatever session the rest of the
+ * site has already established (regular site login/AuthContext) —
+ * there is no separate "connect to play" step here anymore.
  */
 const TOKEN_KEY = "nova_auth_token"; // MUST match AuthContext.jsx's TOKEN_KEY exactly
 
@@ -300,44 +301,6 @@ function EndOverlay({ result, resultData, submitting, gameTitle, onPlayAgain, on
           className="px-6 py-2.5 rounded-full border border-[#1d232b] text-[#8992a1] font-bold uppercase text-sm hover:bg-[#0d1013] transition [font-family:'Space_Grotesk',sans-serif]"
         >
           All Games
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   CONNECT OVERLAY — shown when Play is pressed without a
-   session. Single provider (X) — connecting resumes the game
-   the user originally tried to play, automatically.
-   ============================================================ */
-function ConnectOverlay({ open, connecting, onConnect, onClose }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-[#47d6c4]/25 bg-[#0d1013] shadow-[0_0_60px_rgba(71,214,196,0.2)] p-6 sm:p-7 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-[#545c67] hover:text-[#8992a1] text-sm"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-        <div className="flex flex-col items-center text-center gap-3 mb-6">
-          <div className="w-14 h-14 rounded-full border-2 border-[#47d6c4]/50 flex items-center justify-center shadow-[0_0_20px_rgba(71,214,196,0.35)]">
-            <Gamepad2 size={24} color="#47d6c4" strokeWidth={1.8} />
-          </div>
-          <h3 className="text-lg font-bold [font-family:'Space_Grotesk',sans-serif] text-[#e7eaee]">Connect to play</h3>
-          <p className="text-[#8992a1] text-xs max-w-xs">
-            Connect your X account so your score, XP, and leaderboard rank get saved.
-          </p>
-        </div>
-        <button
-          onClick={onConnect}
-          disabled={connecting}
-          className="w-full flex items-center justify-center gap-3 py-3 rounded-xl bg-[#47d6c4] hover:brightness-110 transition font-bold text-sm text-[#0b0d10] disabled:opacity-60 [font-family:'Space_Grotesk',sans-serif]"
-        >
-          {connecting ? "Connecting..." : "Continue with X"}
         </button>
       </div>
     </div>
@@ -1227,12 +1190,6 @@ export default function Game() {
   const arenaSectionRef = useRef(null);
   const gamesGridRef = useRef(null);
 
-  // Connect-to-play overlay state
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [pendingGameId, setPendingGameId] = useState(null);
-  const popupRef = useRef(null);
-
   /* ------------------------------------------------------------
      LEADERBOARD
      ------------------------------------------------------------ */
@@ -1248,8 +1205,11 @@ export default function Game() {
   useEffect(() => { fetchLeaderboard(); }, [fetchLeaderboard]);
 
   /* ------------------------------------------------------------
-     SESSION BOOTSTRAP — always lands on the hub; connecting only
-     happens on demand (when Play is pressed), never as a gate.
+     SESSION BOOTSTRAP — the game page always lands on the hub.
+     It simply reads whatever session token the rest of the site
+     (regular site login / AuthContext) has already stored under
+     TOKEN_KEY. There is no separate connect-to-play step here:
+     if the user is logged in on the site, they're logged in here.
      ------------------------------------------------------------ */
   const fetchProfile = useCallback(async () => {
     const res = await axios.get(`${API_BASE}/profile`, authHeaders());
@@ -1259,103 +1219,18 @@ export default function Game() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const incomingToken = params.get("token");
-      const incomingError = params.get("error");
-
-      if (incomingToken || incomingError) {
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-      if (incomingToken) localStorage.setItem(TOKEN_KEY, incomingToken);
-      if (incomingError) setError("X connection failed. Please try again.");
-
       const token = getToken();
       if (token) {
         try {
           await fetchProfile();
         } catch (err) {
-          localStorage.removeItem(TOKEN_KEY);
+          // token invalid/expired — leave profile empty, hub still shows
         }
       }
       setPhase("hub");
     };
     bootstrap();
   }, [fetchProfile]);
-
-  /* ------------------------------------------------------------
-     CONNECT OVERLAY — opened when Play is pressed without a session
-     ------------------------------------------------------------ */
-  const openConnectOverlay = (gameId) => {
-    setPendingGameId(gameId);
-    setError("");
-    setConnectOpen(true);
-  };
-  const closeConnectOverlay = () => {
-    setConnectOpen(false);
-    setConnecting(false);
-    setPendingGameId(null);
-  };
-
-  const handleConnectX = () => {
-    setConnecting(true);
-    setError("");
-
-    const width = 500;
-    const height = 650;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-
-    const popup = window.open(
-      `${AUTH_BASE}/${X_LOGIN_PATH}`,
-      "x-oauth",
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
-
-    if (!popup) {
-      window.location.href = `${AUTH_BASE}/${X_LOGIN_PATH}`;
-      return;
-    }
-    popupRef.current = popup;
-
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed);
-        setConnecting(false);
-      }
-    }, 500);
-  };
-
-  useEffect(() => {
-    const onMessage = async (event) => {
-      // the popup runs on the BACKEND's origin, not this page's own origin
-      if (event.origin !== API_ORIGIN) return;
-      const data = event.data;
-      if (!data || typeof data !== "object") return;
-
-      if (data.type === "x-oauth-success" && data.token) {
-        localStorage.setItem(TOKEN_KEY, data.token);
-        setConnecting(false);
-        try {
-          await fetchProfile();
-          setError("");
-          setConnectOpen(false);
-          const gameToStart = pendingGameId;
-          setPendingGameId(null);
-          if (gameToStart) startGame(gameToStart);
-        } catch (err) {
-          localStorage.removeItem(TOKEN_KEY);
-          setError("Failed to load your profile. Please try connecting again.");
-        }
-      } else if (data.type === "x-oauth-error") {
-        setConnecting(false);
-        setError("X connection failed. Please try again.");
-      }
-    };
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchProfile, pendingGameId]);
 
   /* ------------------------------------------------------------
      GAME SELECTION / FINISH / SUBMIT
@@ -1382,9 +1257,11 @@ export default function Game() {
       await axios.post(`${API_BASE}/start`, { gameId }, authHeaders());
     } catch (err) {
       if (err?.response?.status === 401) {
+        // Session on the site has expired/logged out — just surface a message,
+        // no separate connect flow. User can log back in via the site's own login.
         localStorage.removeItem(TOKEN_KEY);
         setProfile(null);
-        openConnectOverlay(gameId);
+        setError("Your session has expired. Please log in again to save your score.");
         return;
       }
       setError(err?.response?.data?.message || "Failed to start mission.");
@@ -1398,10 +1275,8 @@ export default function Game() {
   };
 
   const handlePlayGame = (gameId) => {
-    if (!getToken()) {
-      openConnectOverlay(gameId);
-      return;
-    }
+    // No more "connect to play" gate — anyone already logged in on the
+    // site can play directly. XP/ranking are tied to that same session.
     startGame(gameId);
   };
 
@@ -1438,12 +1313,6 @@ export default function Game() {
     setPaused(false);
     setRunKey((k) => k + 1);
     setPhase("playing");
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    setProfile(null);
-    setPhase("hub");
   };
 
   const activeGameMeta = GAMES.find((g) => g.id === activeGameId);
@@ -1488,8 +1357,8 @@ export default function Game() {
               </h1>
               <p className="text-[#8992a1] text-sm sm:text-base max-w-lg mx-auto lg:mx-0 mb-7 leading-relaxed">
                 A curated arcade built to test reflexes, precision, planning, and memory —
-                each run earns capped XP toward the arena leaderboard. Connect with X only
-                when you're ready to save a score and climb the ranks.
+                each run earns capped XP toward the arena leaderboard, tied to your
+                account on the site.
               </p>
               <div className="flex flex-wrap justify-center lg:justify-start gap-3">
                 <button
@@ -1601,9 +1470,6 @@ export default function Game() {
                       <p className="text-[#47d6c4] text-sm">Level XP: {profile.totalXP ?? 0}</p>
                       <p className="text-[#545c67] text-xs">Wins {profile.wins ?? 0} · Losses {profile.losses ?? 0}</p>
                     </div>
-                    <button onClick={handleLogout} className="ml-auto text-[#545c67] hover:text-[#8992a1] text-xs underline transition whitespace-nowrap">
-                      Disconnect
-                    </button>
                   </div>
                 )}
 
@@ -1770,13 +1636,6 @@ export default function Game() {
           </div>
         </div>
       </div>
-
-      <ConnectOverlay
-        open={connectOpen}
-        connecting={connecting}
-        onConnect={handleConnectX}
-        onClose={closeConnectOverlay}
-      />
     </div>
   );
 }
