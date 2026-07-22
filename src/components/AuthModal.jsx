@@ -1,12 +1,13 @@
 /**
  * AuthModal.jsx
  * ------------------------------------------------------------------
- * Sign in / create account modal. Offers email+password as well as
- * "Continue with Google" via Google Identity Services.
+ * Sign in / create account modal. Offers email+password, "Continue
+ * with Google", and "Continue with X".
  *
  * Requires VITE_GOOGLE_CLIENT_ID to be set for the Google button to
- * render — if it's missing, the modal still works with email/password.
- * Styles for this component live in AIAssistant.jsx's shared STYLES.
+ * render — if it's missing, the modal still works with email/password
+ * and X. Styles live in <style> block at the bottom of this file;
+ * merge into your shared stylesheet if you prefer.
  * ------------------------------------------------------------------
  */
 
@@ -16,16 +17,16 @@ import { useAuth } from "../context/AuthContext";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export default function AuthModal({ open, onClose }) {
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, loginWithX } = useAuth();
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isXLoading, setIsXLoading] = useState(false);
   const googleBtnRef = useRef(null);
 
-  // Load & render the Google button whenever the modal opens.
   useEffect(() => {
     if (!open || !GOOGLE_CLIENT_ID) return;
 
@@ -74,6 +75,19 @@ export default function AuthModal({ open, onClose }) {
     }
   }
 
+  async function handleXClick() {
+    setError("");
+    setIsXLoading(true);
+    try {
+      await loginWithX();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsXLoading(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -113,14 +127,24 @@ export default function AuthModal({ open, onClose }) {
           </div>
         </div>
 
-        {GOOGLE_CLIENT_ID && (
-          <>
-            <div className="nv-google-btn" ref={googleBtnRef} />
-            <div className="nv-auth-divider">
-              <span>or</span>
-            </div>
-          </>
-        )}
+        <div className="nv-auth-social">
+          {GOOGLE_CLIENT_ID && <div className="nv-google-btn" ref={googleBtnRef} />}
+          <button
+            type="button"
+            className="nv-x-btn"
+            onClick={handleXClick}
+            disabled={isXLoading}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            {isXLoading ? "Connecting…" : "Continue with X"}
+          </button>
+        </div>
+
+        <div className="nv-auth-divider">
+          <span>or</span>
+        </div>
 
         <form className="nv-auth-form" onSubmit={handleSubmit}>
           {mode === "register" && (
@@ -178,6 +202,63 @@ export default function AuthModal({ open, onClose }) {
           )}
         </div>
       </div>
+
+      <style>{`
+        .nv-auth-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1000; padding: 16px;
+        }
+        .nv-auth-modal {
+          background: #16181c; border: 1px solid #2a2d34; border-radius: 14px;
+          width: 100%; max-width: 380px; padding: 28px; position: relative;
+          color: #e8e9ec;
+        }
+        .nv-auth-close {
+          position: absolute; top: 14px; right: 14px; background: none;
+          border: none; color: #8a8f98; font-size: 22px; cursor: pointer;
+          line-height: 1; padding: 4px;
+        }
+        .nv-auth-close:hover { color: #e8e9ec; }
+        .nv-auth-header { margin-bottom: 18px; }
+        .nv-auth-title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+        .nv-auth-sub { font-size: 13px; color: #9199a3; line-height: 1.4; }
+        .nv-auth-social { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+        .nv-google-btn { display: flex; justify-content: center; }
+        .nv-x-btn {
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          width: 100%; padding: 10px 16px; border-radius: 8px;
+          background: #000; color: #fff; border: 1px solid #2a2d34;
+          font-size: 14px; font-weight: 500; cursor: pointer;
+        }
+        .nv-x-btn:hover { background: #1a1a1a; }
+        .nv-x-btn:disabled { opacity: 0.6; cursor: default; }
+        .nv-auth-divider {
+          display: flex; align-items: center; gap: 10px; margin: 18px 0;
+          color: #6b7078; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .nv-auth-divider::before, .nv-auth-divider::after {
+          content: ""; flex: 1; height: 1px; background: #2a2d34;
+        }
+        .nv-auth-form { display: flex; flex-direction: column; gap: 10px; }
+        .nv-auth-input {
+          background: #0f1114; border: 1px solid #2a2d34; border-radius: 8px;
+          padding: 10px 12px; color: #e8e9ec; font-size: 14px; outline: none;
+        }
+        .nv-auth-input:focus { border-color: #5b8def; }
+        .nv-auth-error { color: #f26b6b; font-size: 13px; }
+        .nv-auth-submit {
+          margin-top: 4px; padding: 10px 16px; border-radius: 8px; border: none;
+          background: #5b8def; color: #fff; font-size: 14px; font-weight: 600;
+          cursor: pointer;
+        }
+        .nv-auth-submit:hover { background: #4a7bdc; }
+        .nv-auth-submit:disabled { opacity: 0.6; cursor: default; }
+        .nv-auth-switch { margin-top: 16px; text-align: center; font-size: 13px; color: #9199a3; }
+        .nv-auth-switch button {
+          background: none; border: none; color: #5b8def; cursor: pointer; font-size: 13px; padding: 0;
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
+import AuthButton from "./components/AuthButton.jsx";
 import Home from "./pages/Home.jsx";
 import Ecosystem from "./pages/Ecosystem.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -22,8 +23,18 @@ const navLinks = [
 
 const communityLink = { to: "/community", label: "Join Community" };
 
-// Backend base URL, injected via Vite env var (see .env -> VITE_API_BASE_URL)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+// Backend base URL, injected via Vite env var (see .env -> VITE_API_BASE_URL).
+//
+// IMPORTANT: `import.meta.env.VITE_API_BASE_URL || ""` used to fall back to
+// an empty string when the env var wasn't set on Vercel. Passing "" into
+// <AuthProvider apiBaseUrl={...}> explicitly OVERRIDES AuthContext's own
+// default URL (JS default params only kick in for `undefined`, not ""),
+// so every auth/chat request silently went to the frontend's own domain
+// instead of the Railway backend -> 404s everywhere.
+//
+// Fix: fall back to `undefined` instead of "" when the env var is missing,
+// so AuthProvider's built-in DEFAULT_API_BASE_URL actually gets used.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || undefined;
 
 export default function App() {
   const location = useLocation();
@@ -117,6 +128,10 @@ export default function App() {
           Injective Pakistan Hub — Community built, open source. ❤️ Pakistan
         </footer>
       </div>
+
+      {/* Floating bottom-right sign in / profile widget — sits outside
+          .app-shell so it stays fixed and visible on every route. */}
+      <AuthButton />
     </AuthProvider>
   );
 }

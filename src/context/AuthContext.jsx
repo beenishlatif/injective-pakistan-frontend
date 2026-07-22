@@ -3,16 +3,16 @@
  * ------------------------------------------------------------------
  * Global auth state: current user, JWT token (persisted in
  * localStorage so a refresh doesn't log the user out), and the
- * register/login/loginWithGoogle/logout actions.
+ * register/login/loginWithGoogle/loginWithX/logout actions.
  *
  * Wrap your app once:
  *   <AuthProvider>
- *     <AIAssistant />
+ *     <App />
  *   </AuthProvider>
  * ------------------------------------------------------------------
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = "nova_auth_token";
@@ -28,6 +28,7 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
   });
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const xPopupRef = useRef(null);
 
   function persistToken(tok) {
     setToken(tok);
@@ -39,7 +40,6 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
     }
   }
 
-  // Wraps fetch and automatically attaches the Authorization header when signed in.
   const authFetch = useCallback(
     (path, options = {}) => {
       const headers = { ...(options.headers || {}) };
@@ -123,6 +123,59 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
     return data.user;
   }
 
+  // Opens the X OAuth popup and resolves/rejects once the popup
+  // posts back a result (see auth.routes.js popupResponseHtml).
+  function loginWithX() {
+    return new Promise((resolve, reject) => {
+      const width = 500;
+      const height = 650;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      const popup = window.open(
+        `${apiBaseUrl}/api/auth/x/login`,
+        "x-oauth-popup",
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+      xPopupRef.current = popup;
+
+      if (!popup) {
+        reject(new Error("Popup was blocked. Please allow popups and try again."));
+        return;
+      }
+
+      function handleMessage(event) {
+        if (event.origin !== window.location.origin && event.origin !== apiBaseUrl) {
+          // Still allow same-site frontend origin; ignore anything else.
+          if (event.origin !== window.location.origin) return;
+        }
+        const { data } = event;
+        if (!data || (data.type !== "x-oauth-success" && data.type !== "x-oauth-error")) return;
+
+        window.removeEventListener("message", handleMessage);
+        clearInterval(pollClosed);
+
+        if (data.type === "x-oauth-success") {
+          persistToken(data.token);
+          resolve();
+        } else {
+          reject(new Error(data.message || "X sign-in failed."));
+        }
+      }
+
+      window.addEventListener("message", handleMessage);
+
+      // If the user closes the popup manually without completing login.
+      const pollClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(pollClosed);
+          window.removeEventListener("message", handleMessage);
+          reject(new Error("Sign-in was cancelled."));
+        }
+      }, 500);
+    });
+  }
+
   function logout() {
     persistToken(null);
     setUser(null);
@@ -138,6 +191,7 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
         register,
         login,
         loginWithGoogle,
+        loginWithX,
         logout,
         apiBaseUrl,
       }}
