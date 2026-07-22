@@ -131,6 +131,7 @@ export default function AIAssistant({ useStreaming = true }) {
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -326,6 +327,11 @@ export default function AIAssistant({ useStreaming = true }) {
   }
 
   function handleLogout() {
+    setLogoutConfirmOpen(true);
+  }
+
+  function confirmLogout() {
+    setLogoutConfirmOpen(false);
     logout();
     setSidebarOpen(false);
   }
@@ -338,6 +344,25 @@ export default function AIAssistant({ useStreaming = true }) {
     <>
       <style>{STYLES}</style>
       <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+
+      {logoutConfirmOpen && (
+        <div className="nv-logout-overlay" onClick={() => setLogoutConfirmOpen(false)}>
+          <div className="nv-logout-box" onClick={(e) => e.stopPropagation()}>
+            <div className="nv-logout-title">Sign out?</div>
+            <div className="nv-logout-text">
+              Are you sure you want to sign out{user?.name ? `, ${user.name}` : ""}?
+            </div>
+            <div className="nv-logout-actions">
+              <button className="nv-logout-cancel" onClick={() => setLogoutConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button className="nv-logout-confirm" onClick={confirmLogout}>
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="nv-page">
         {sidebarOpen && <div className="nv-backdrop" onClick={() => setSidebarOpen(false)} />}
@@ -632,6 +657,37 @@ const STYLES = `
   background: rgba(0, 0, 0, 0.55);
   z-index: 30;
 }
+
+/* ---------------- Logout confirmation ---------------- */
+.nv-logout-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+}
+.nv-logout-box {
+  width: 100%; max-width: 320px; background: var(--nv-sidebar);
+  border: 1px solid var(--nv-hairline); border-radius: 10px;
+  padding: 20px; color: var(--nv-text);
+}
+.nv-logout-title {
+  font-family: var(--nv-font-display); font-weight: 700; font-size: 16px; margin-bottom: 8px;
+}
+.nv-logout-text {
+  font-size: 13px; line-height: 1.55; color: var(--nv-text-dim); margin-bottom: 18px;
+}
+.nv-logout-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.nv-logout-cancel {
+  padding: 8px 14px; border-radius: 6px; border: 1px solid var(--nv-hairline);
+  background: transparent; color: var(--nv-text); font-size: 12.5px; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.nv-logout-cancel:hover { background: rgba(255, 255, 255, 0.05); }
+.nv-logout-confirm {
+  padding: 8px 14px; border-radius: 6px; border: 1px solid var(--nv-danger);
+  background: var(--nv-danger-dim); color: var(--nv-danger); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nv-logout-confirm:hover { background: var(--nv-danger); color: #1a0d0d; }
 
 /* ---------------- Sidebar ---------------- */
 .nv-sidebar {
