@@ -1,6 +1,6 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
-import AuthButton from "./components/AuthButton.jsx";
+import AuthButton from "./components/Authbutton.jsx";
 import Home from "./pages/Home.jsx";
 import Ecosystem from "./pages/Ecosystem.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
