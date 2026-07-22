@@ -57,6 +57,20 @@ const API_BASE = `${API_ORIGIN}/api/game`;
 const AUTH_BASE = `${API_ORIGIN}/api/auth`;
 const X_LOGIN_PATH = "x/login"; // only provider for now
 
+/**
+ * FIX (session shared with AI Assistant / rest of the app):
+ * This used to be a bare "token" key, while AuthContext.jsx (used by
+ * the AI Assistant page and everywhere else auth is wired through
+ * useAuth()) stores the JWT under "nova_auth_token". Because the two
+ * pages read/wrote different localStorage keys, connecting via X on
+ * one page was invisible to the other — Game.jsx always thought the
+ * user was signed out, even right after a successful X connect on
+ * the AI Assistant page (and vice versa).
+ *
+ * Using the exact same key here makes both pages share one session.
+ */
+const TOKEN_KEY = "nova_auth_token"; // MUST match AuthContext.jsx's TOKEN_KEY exactly
+
 const GAME_WIDTH = 900;
 const GAME_HEIGHT = 400;
 const GROUND_Y = 330;
@@ -103,7 +117,7 @@ const XP_CAP = 50;
 const XP_SCORE_DIVISOR = 22; // score points needed per 1 xp before the cap
 
 function getToken() {
-  return localStorage.getItem("token");
+  return localStorage.getItem(TOKEN_KEY);
 }
 function authHeaders() {
   const token = getToken();
@@ -1252,7 +1266,7 @@ export default function Game() {
       if (incomingToken || incomingError) {
         window.history.replaceState({}, "", window.location.pathname);
       }
-      if (incomingToken) localStorage.setItem("token", incomingToken);
+      if (incomingToken) localStorage.setItem(TOKEN_KEY, incomingToken);
       if (incomingError) setError("X connection failed. Please try again.");
 
       const token = getToken();
@@ -1260,7 +1274,7 @@ export default function Game() {
         try {
           await fetchProfile();
         } catch (err) {
-          localStorage.removeItem("token");
+          localStorage.removeItem(TOKEN_KEY);
         }
       }
       setPhase("hub");
@@ -1319,7 +1333,7 @@ export default function Game() {
       if (!data || typeof data !== "object") return;
 
       if (data.type === "x-oauth-success" && data.token) {
-        localStorage.setItem("token", data.token);
+        localStorage.setItem(TOKEN_KEY, data.token);
         setConnecting(false);
         try {
           await fetchProfile();
@@ -1329,7 +1343,7 @@ export default function Game() {
           setPendingGameId(null);
           if (gameToStart) startGame(gameToStart);
         } catch (err) {
-          localStorage.removeItem("token");
+          localStorage.removeItem(TOKEN_KEY);
           setError("Failed to load your profile. Please try connecting again.");
         }
       } else if (data.type === "x-oauth-error") {
@@ -1368,7 +1382,7 @@ export default function Game() {
       await axios.post(`${API_BASE}/start`, { gameId }, authHeaders());
     } catch (err) {
       if (err?.response?.status === 401) {
-        localStorage.removeItem("token");
+        localStorage.removeItem(TOKEN_KEY);
         setProfile(null);
         openConnectOverlay(gameId);
         return;
@@ -1427,7 +1441,7 @@ export default function Game() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem(TOKEN_KEY);
     setProfile(null);
     setPhase("hub");
   };
