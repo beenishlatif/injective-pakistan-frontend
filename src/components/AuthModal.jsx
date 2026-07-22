@@ -1,12 +1,13 @@
 /**
  * AuthModal.jsx
  * ------------------------------------------------------------------
- * Sign in / create account modal. Offers email+password and
- * "Continue with Google".
+ * Sign in / create account modal. Offers email+password, "Continue
+ * with Google", and "Continue with X".
  *
  * Requires VITE_GOOGLE_CLIENT_ID to be set for the Google button to
- * render — if it's missing, the modal falls back to email/password
- * only (no divider shown, since there's nothing to divide from).
+ * render — if it's missing, the modal still works with email/password
+ * and X. Styles live in <style> block at the bottom of this file;
+ * merge into your shared stylesheet if you prefer.
  * ------------------------------------------------------------------
  */
 
@@ -16,27 +17,15 @@ import { useAuth } from "../context/AuthContext";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export default function AuthModal({ open, onClose }) {
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, loginWithX } = useAuth();
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isXLoading, setIsXLoading] = useState(false);
   const googleBtnRef = useRef(null);
-
-  // Reset form state whenever the modal is closed/reopened, so a
-  // previous session's typed values/errors don't linger.
-  useEffect(() => {
-    if (!open) {
-      setMode("login");
-      setName("");
-      setEmail("");
-      setPassword("");
-      setError("");
-      setIsSubmitting(false);
-    }
-  }, [open]);
 
   useEffect(() => {
     if (!open || !GOOGLE_CLIENT_ID) return;
@@ -51,7 +40,7 @@ export default function AuthModal({ open, onClose }) {
       window.google.accounts.id.renderButton(googleBtnRef.current, {
         theme: "filled_black",
         size: "large",
-        width: 320,
+        width: 300,
         text: "continue_with",
         shape: "rectangular",
       });
@@ -86,6 +75,19 @@ export default function AuthModal({ open, onClose }) {
     }
   }
 
+  async function handleXClick() {
+    setError("");
+    setIsXLoading(true);
+    try {
+      await loginWithX();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsXLoading(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -105,11 +107,6 @@ export default function AuthModal({ open, onClose }) {
     }
   }
 
-  function switchMode(nextMode) {
-    setMode(nextMode);
-    setError("");
-  }
-
   if (!open) return null;
 
   return (
@@ -119,103 +116,71 @@ export default function AuthModal({ open, onClose }) {
           ×
         </button>
 
-        {/* Mode switcher tabs — clearer than a text link for the primary choice */}
-        <div className="nv-auth-tabs">
-          <button
-            type="button"
-            className={`nv-auth-tab ${mode === "login" ? "nv-auth-tab-active" : ""}`}
-            onClick={() => switchMode("login")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={`nv-auth-tab ${mode === "register" ? "nv-auth-tab-active" : ""}`}
-            onClick={() => switchMode("register")}
-          >
-            Create account
-          </button>
-        </div>
-
         <div className="nv-auth-header">
           <div className="nv-auth-title">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </div>
           <div className="nv-auth-sub">
             {mode === "login"
-              ? "Sign in to pick up your saved chats, on any device."
+              ? "Sign in to save and revisit your chat history."
               : "Save your chats and pick up where you left off, on any device."}
           </div>
         </div>
 
-        {GOOGLE_CLIENT_ID && (
-          <>
-            <div className="nv-auth-social">
-              <div className="nv-google-btn" ref={googleBtnRef} />
-            </div>
-            <div className="nv-auth-divider">
-              <span>or use email</span>
-            </div>
-          </>
-        )}
+        <div className="nv-auth-social">
+          {GOOGLE_CLIENT_ID && <div className="nv-google-btn" ref={googleBtnRef} />}
+          <button
+            type="button"
+            className="nv-x-btn"
+            onClick={handleXClick}
+            disabled={isXLoading}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            {isXLoading ? "Connecting…" : "Continue with X"}
+          </button>
+        </div>
+
+        <div className="nv-auth-divider">
+          <span>or</span>
+        </div>
 
         <form className="nv-auth-form" onSubmit={handleSubmit}>
           {mode === "register" && (
-            <label className="nv-auth-field">
-              <span className="nv-auth-label">Full name</span>
-              <input
-                className="nv-auth-input"
-                type="text"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="name"
-              />
-            </label>
-          )}
-
-          <label className="nv-auth-field">
-            <span className="nv-auth-label">Email</span>
             <input
               className="nv-auth-input"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
+              type="text"
+              placeholder="Full name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
             />
-          </label>
-
-          <label className="nv-auth-field">
-            <span className="nv-auth-label">Password</span>
-            <input
-              className="nv-auth-input"
-              type="password"
-              placeholder={mode === "register" ? "At least 6 characters" : "Your password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              minLength={6}
-              required
-            />
-          </label>
-
-          {error && (
-            <div className="nv-auth-error">
-              <span className="nv-auth-error-dot" />
-              {error}
-            </div>
           )}
+          <input
+            className="nv-auth-input"
+            type="email"
+            placeholder="Email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
+          <input
+            className="nv-auth-input"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            minLength={6}
+            required
+          />
+
+          {error && <div className="nv-auth-error">{error}</div>}
 
           <button className="nv-auth-submit" type="submit" disabled={isSubmitting}>
-            {isSubmitting
-              ? mode === "login"
-                ? "Signing in…"
-                : "Creating account…"
-              : mode === "login"
-              ? "Sign in"
-              : "Create account"}
+            {isSubmitting ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
           </button>
         </form>
 
@@ -223,14 +188,14 @@ export default function AuthModal({ open, onClose }) {
           {mode === "login" ? (
             <>
               Don't have an account?{" "}
-              <button type="button" onClick={() => switchMode("register")}>
+              <button type="button" onClick={() => { setMode("register"); setError(""); }}>
                 Sign up
               </button>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <button type="button" onClick={() => switchMode("login")}>
+              <button type="button" onClick={() => { setMode("login"); setError(""); }}>
                 Sign in
               </button>
             </>
@@ -246,7 +211,7 @@ export default function AuthModal({ open, onClose }) {
         }
         .nv-auth-modal {
           background: #16181c; border: 1px solid #2a2d34; border-radius: 14px;
-          width: 100%; max-width: 400px; padding: 24px 28px 28px; position: relative;
+          width: 100%; max-width: 380px; padding: 28px; position: relative;
           color: #e8e9ec;
         }
         .nv-auth-close {
@@ -255,66 +220,44 @@ export default function AuthModal({ open, onClose }) {
           line-height: 1; padding: 4px;
         }
         .nv-auth-close:hover { color: #e8e9ec; }
-
-        .nv-auth-tabs {
-          display: flex; gap: 4px; background: #0f1114; border: 1px solid #2a2d34;
-          border-radius: 10px; padding: 4px; margin: 8px 0 20px;
-        }
-        .nv-auth-tab {
-          flex: 1; padding: 8px 10px; border-radius: 7px; border: none;
-          background: transparent; color: #9199a3; font-size: 13px; font-weight: 600;
-          cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
-        }
-        .nv-auth-tab-active { background: #5b8def; color: #fff; }
-
         .nv-auth-header { margin-bottom: 18px; }
-        .nv-auth-title { font-size: 19px; font-weight: 600; margin-bottom: 6px; }
-        .nv-auth-sub { font-size: 13px; color: #9199a3; line-height: 1.5; }
-
-        .nv-auth-social { display: flex; justify-content: center; margin-bottom: 4px; }
-        .nv-google-btn { display: flex; justify-content: center; width: 100%; }
-
+        .nv-auth-title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+        .nv-auth-sub { font-size: 13px; color: #9199a3; line-height: 1.4; }
+        .nv-auth-social { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+        .nv-google-btn { display: flex; justify-content: center; }
+        .nv-x-btn {
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          width: 100%; padding: 10px 16px; border-radius: 8px;
+          background: #000; color: #fff; border: 1px solid #2a2d34;
+          font-size: 14px; font-weight: 500; cursor: pointer;
+        }
+        .nv-x-btn:hover { background: #1a1a1a; }
+        .nv-x-btn:disabled { opacity: 0.6; cursor: default; }
         .nv-auth-divider {
           display: flex; align-items: center; gap: 10px; margin: 18px 0;
-          color: #6b7078; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+          color: #6b7078; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
         }
         .nv-auth-divider::before, .nv-auth-divider::after {
           content: ""; flex: 1; height: 1px; background: #2a2d34;
         }
-
-        .nv-auth-form { display: flex; flex-direction: column; gap: 14px; }
-        .nv-auth-field { display: flex; flex-direction: column; gap: 6px; }
-        .nv-auth-label { font-size: 12px; font-weight: 500; color: #9199a3; }
+        .nv-auth-form { display: flex; flex-direction: column; gap: 10px; }
         .nv-auth-input {
           background: #0f1114; border: 1px solid #2a2d34; border-radius: 8px;
           padding: 10px 12px; color: #e8e9ec; font-size: 14px; outline: none;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
-        .nv-auth-input:focus { border-color: #5b8def; box-shadow: 0 0 0 3px rgba(91,141,239,0.15); }
-
-        .nv-auth-error {
-          display: flex; align-items: center; gap: 8px;
-          background: rgba(229,100,95,0.1); border: 1px solid rgba(229,100,95,0.3);
-          color: #f26b6b; font-size: 12.5px; padding: 9px 11px; border-radius: 7px;
-        }
-        .nv-auth-error-dot {
-          width: 6px; height: 6px; border-radius: 50%; background: #f26b6b; flex-shrink: 0;
-        }
-
+        .nv-auth-input:focus { border-color: #5b8def; }
+        .nv-auth-error { color: #f26b6b; font-size: 13px; }
         .nv-auth-submit {
-          margin-top: 2px; padding: 11px 16px; border-radius: 8px; border: none;
+          margin-top: 4px; padding: 10px 16px; border-radius: 8px; border: none;
           background: #5b8def; color: #fff; font-size: 14px; font-weight: 600;
-          cursor: pointer; transition: background 0.15s ease, opacity 0.15s ease;
+          cursor: pointer;
         }
-        .nv-auth-submit:hover:not(:disabled) { background: #4a7bdc; }
+        .nv-auth-submit:hover { background: #4a7bdc; }
         .nv-auth-submit:disabled { opacity: 0.6; cursor: default; }
-
-        .nv-auth-switch { margin-top: 18px; text-align: center; font-size: 13px; color: #9199a3; }
+        .nv-auth-switch { margin-top: 16px; text-align: center; font-size: 13px; color: #9199a3; }
         .nv-auth-switch button {
-          background: none; border: none; color: #5b8def; cursor: pointer; font-size: 13px;
-          padding: 0; font-weight: 600;
+          background: none; border: none; color: #5b8def; cursor: pointer; font-size: 13px; padding: 0;
         }
-        .nv-auth-switch button:hover { text-decoration: underline; }
       `}</style>
     </div>
   );

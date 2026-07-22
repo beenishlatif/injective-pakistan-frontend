@@ -4,8 +4,9 @@
  * Floating bottom-right widget:
  *   - Logged out -> pill button "Sign in" that opens AuthModal.
  *   - Logged in  -> circular avatar. Click opens a small dropdown
- *     with the user's name/email and "Log out" (with an inline
- *     confirmation step before actually logging out).
+ *     with the user's name/email, "Switch account" (logs out then
+ *     reopens the modal so a different account/method can be used),
+ *     and "Log out".
  *
  * Usage: drop <AuthButton /> once near the root of your app, inside
  * <AuthProvider>. It's self-contained (own modal + own state).
@@ -20,34 +21,21 @@ export default function AuthButton() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmingLogout, setConfirmingLogout] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
     function handleClickOutside(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setMenuOpen(false);
-        setConfirmingLogout(false);
       }
     }
     if (menuOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [menuOpen]);
 
-  // Reset the confirmation step whenever the menu closes/reopens.
-  useEffect(() => {
-    if (!menuOpen) setConfirmingLogout(false);
-  }, [menuOpen]);
-
   if (isLoading) return null;
 
   const initials = (user?.name || user?.email || "?").trim().charAt(0).toUpperCase();
-
-  function handleConfirmLogout() {
-    logout();
-    setConfirmingLogout(false);
-    setMenuOpen(false);
-  }
 
   return (
     <>
@@ -68,38 +56,29 @@ export default function AuthButton() {
 
             {menuOpen && (
               <div className="nv-authbtn-menu">
-                {!confirmingLogout ? (
-                  <>
-                    <div className="nv-authbtn-menu-header">
-                      <div className="nv-authbtn-menu-name">{user?.name || "Signed in"}</div>
-                      {user?.email && <div className="nv-authbtn-menu-email">{user.email}</div>}
-                    </div>
-                    <button
-                      className="nv-authbtn-menu-item nv-authbtn-menu-danger"
-                      onClick={() => setConfirmingLogout(true)}
-                    >
-                      Log out
-                    </button>
-                  </>
-                ) : (
-                  <div className="nv-authbtn-confirm">
-                    <div className="nv-authbtn-confirm-text">Log out of your account?</div>
-                    <div className="nv-authbtn-confirm-actions">
-                      <button
-                        className="nv-authbtn-confirm-cancel"
-                        onClick={() => setConfirmingLogout(false)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="nv-authbtn-confirm-yes"
-                        onClick={handleConfirmLogout}
-                      >
-                        Log out
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div className="nv-authbtn-menu-header">
+                  <div className="nv-authbtn-menu-name">{user?.name || "Signed in"}</div>
+                  {user?.email && <div className="nv-authbtn-menu-email">{user.email}</div>}
+                </div>
+                <button
+                  className="nv-authbtn-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    logout();
+                    setModalOpen(true);
+                  }}
+                >
+                  Switch account
+                </button>
+                <button
+                  className="nv-authbtn-menu-item nv-authbtn-menu-danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    logout();
+                  }}
+                >
+                  Log out
+                </button>
               </div>
             )}
           </>
@@ -131,7 +110,7 @@ export default function AuthButton() {
         }
         .nv-authbtn-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .nv-authbtn-menu {
-          position: absolute; bottom: 54px; right: 0; width: 230px;
+          position: absolute; bottom: 54px; right: 0; width: 220px;
           background: #16181c; border: 1px solid #2a2d34; border-radius: 12px;
           padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.45);
         }
@@ -144,20 +123,6 @@ export default function AuthButton() {
         }
         .nv-authbtn-menu-item:hover { background: #22252b; }
         .nv-authbtn-menu-danger { color: #f26b6b; }
-
-        .nv-authbtn-confirm { padding: 10px 8px 4px; display: flex; flex-direction: column; gap: 10px; }
-        .nv-authbtn-confirm-text { font-size: 13px; color: #e8e9ec; padding: 0 2px; }
-        .nv-authbtn-confirm-actions { display: flex; gap: 8px; }
-        .nv-authbtn-confirm-cancel {
-          flex: 1; padding: 8px 10px; border-radius: 7px; border: 1px solid #2a2d34;
-          background: transparent; color: #e8e9ec; font-size: 12.5px; font-weight: 500; cursor: pointer;
-        }
-        .nv-authbtn-confirm-cancel:hover { background: #22252b; }
-        .nv-authbtn-confirm-yes {
-          flex: 1; padding: 8px 10px; border-radius: 7px; border: none;
-          background: #e5645f; color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer;
-        }
-        .nv-authbtn-confirm-yes:hover { background: #d1544f; }
       `}</style>
     </>
   );
