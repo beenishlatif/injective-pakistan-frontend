@@ -17,7 +17,7 @@ import Community from "./pages/Community.jsx";
 const navLinks = [
   { to: "/", label: "Overview" },
   { to: "/ecosystem", label: "Explore" },
-  { to: "/dashboard", label: "Console" },
+  { to: "/dashboard", label: "Live" },
   { to: "/ai-assistant", label: "Ask Nova" },
   { to: "/academy", label: "Academy" },
   { to: "/game", label: "Play" },
