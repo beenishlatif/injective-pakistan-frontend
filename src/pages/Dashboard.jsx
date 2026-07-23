@@ -3,12 +3,13 @@
  * ------------------------------------------------------------------
  * Live Injective (INJ) network dashboard for Injective Pakistan Hub.
  *
- * Shows a real-time price + market snapshot, plus a historical price
- * chart that can be toggled between a chart view and a raw data table.
+ * Shows a real-time price + staking/supply snapshot, plus a historical
+ * price chart that can be toggled between a chart view and a raw data
+ * table.
  *
- * Data sources (backend, MongoDB-cached, CoinGecko-backed):
- *   GET /api/dashboard/live                 -> current price/market snapshot
- *   GET /api/dashboard/history?range=24h..  -> historical price points
+ * Data sources (backend, MongoDB-cached, CoinGecko/Injective-backed):
+ *   GET /api/stats                 -> current price/staked/supply snapshot
+ *   GET /api/stats/history?range=24h..  -> historical price points
  *
  * Same self-contained styling convention as Home.jsx / AIAssistant.jsx
  * (dark terminal aesthetic: Space Grotesk + Inter + IBM Plex Mono, teal/
@@ -40,15 +41,11 @@ const RANGES = [
   { id: "90d", label: "90D" },
 ];
 
-// Rendered instantly on first paint, replaced once /api/dashboard/live responds.
+// Rendered instantly on first paint, replaced once /api/stats responds.
 const FALLBACK_STATS = {
   priceUsd: null,
-  change24hPct: null,
-  high24hUsd: null,
-  low24hUsd: null,
-  marketCapUsd: null,
-  volume24hUsd: null,
-  circulatingSupply: null,
+  staked: null,
+  totalSupply: null,
   fetchedAt: null,
 };
 
@@ -68,12 +65,6 @@ function formatCompact(value, suffix = "") {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M${suffix}`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K${suffix}`;
   return `${value.toFixed(2)}${suffix}`;
-}
-
-function formatChange(value) {
-  if (value === null || value === undefined) return null;
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatClock(date) {
@@ -105,13 +96,18 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   const loadLiveStats = useCallback(async () => {
     setStatsError(false);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/dashboard/live`);
+      const res = await fetch(`${apiBaseUrl}/api/stats`);
       const data = await res.json();
       if (!res.ok || !data.success) {
         setStatsError(true);
         return;
       }
-      setStats(data.stats);
+      setStats({
+        priceUsd: data.price,
+        staked: data.staked,
+        totalSupply: data.totalSupply,
+        fetchedAt: data.updatedAt,
+      });
       setIsStale(Boolean(data.stale));
     } catch (err) {
       console.error("Failed to load live dashboard stats:", err);
@@ -126,7 +122,7 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
       setHistoryLoading(true);
       setHistoryError(false);
       try {
-        const res = await fetch(`${apiBaseUrl}/api/dashboard/history?range=${selectedRange}`);
+        const res = await fetch(`${apiBaseUrl}/api/stats/history?range=${selectedRange}`);
         const data = await res.json();
         if (!res.ok || !data.success) {
           setHistoryError(true);
@@ -158,8 +154,6 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
     loadHistory(range);
   }, [range, loadHistory]);
 
-  const priceUp = (stats.change24hPct ?? 0) >= 0;
-
   return (
     <>
       <style>{STYLES}</style>
@@ -180,8 +174,8 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
           </div>
           <h1 className="db-title">Injective Dashboard</h1>
           <p className="db-subtitle">
-            Real-time INJ price, market data, and historical trends — refreshed automatically
-            every 45 seconds.
+            Real-time INJ price, staking, and supply data — refreshed automatically every 45
+            seconds.
           </p>
         </header>
 
@@ -206,40 +200,18 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
                   {formatUsd(stats.priceUsd, { precise: true })}
                 </span>
               )}
-              {!statsLoading && stats.change24hPct !== null && (
-                <span className={`db-price-change ${priceUp ? "db-up" : "db-down"}`}>
-                  <ArrowIcon up={priceUp} />
-                  {formatChange(stats.change24hPct)}
-                  <span className="db-price-change-sub">24h</span>
-                </span>
-              )}
             </div>
           </div>
 
           <div className="db-stats-grid">
             <StatCard
-              label="24H High"
-              value={statsLoading ? null : formatUsd(stats.high24hUsd)}
+              label="Staked INJ"
+              value={statsLoading ? null : formatCompact(stats.staked, " INJ")}
               loading={statsLoading}
             />
             <StatCard
-              label="24H Low"
-              value={statsLoading ? null : formatUsd(stats.low24hUsd)}
-              loading={statsLoading}
-            />
-            <StatCard
-              label="Market Cap"
-              value={statsLoading ? null : formatUsd(stats.marketCapUsd)}
-              loading={statsLoading}
-            />
-            <StatCard
-              label="24H Volume"
-              value={statsLoading ? null : formatUsd(stats.volume24hUsd)}
-              loading={statsLoading}
-            />
-            <StatCard
-              label="Circulating Supply"
-              value={statsLoading ? null : formatCompact(stats.circulatingSupply, " INJ")}
+              label="Total Supply"
+              value={statsLoading ? null : formatCompact(stats.totalSupply, " INJ")}
               loading={statsLoading}
             />
           </div>
@@ -467,17 +439,6 @@ function PriceTable({ points, range }) {
 }
 
 // ---------------- Icons ----------------
-function ArrowIcon({ up }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-      <path
-        d={up ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7"}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 function ChartIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -591,10 +552,6 @@ const STYLES = `
   animation: db-shimmer 1.4s ease-in-out infinite;
 }
 @keyframes db-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-.db-price-change { display: inline-flex; align-items: center; gap: 5px; font-family: var(--nv-font-mono); font-size: 15px; font-weight: 500; padding: 6px 10px; border-radius: 6px; }
-.db-price-change-sub { color: var(--nv-text-faint); font-size: 11px; margin-left: 2px; }
-.db-up { color: var(--nv-signal); background: var(--nv-signal-dim); }
-.db-down { color: var(--nv-danger); background: var(--nv-danger-dim); }
 
 /* Stats grid: auto-fit reflows on its own across all breakpoints */
 .db-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
