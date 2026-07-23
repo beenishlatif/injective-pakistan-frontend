@@ -1,19 +1,23 @@
 /**
  * Dashboard.jsx
  * ------------------------------------------------------------------
- * Live Injective network dashboard.
+ * Live, multi-token crypto dashboard.
  *
  * Sections:
  *   1. Header (title + live status pill + last-updated time)
- *   2. Live Stats grid (price / 24h change / staked / burned / volume / mcap)
- *   3. Chart panel — pick a metric (price, staked, burned, volume, mcap)
- *      and a range (1H / 24H / 7D / 30D), renders as an SVG area+line
- *      chart with a hover tooltip. No external chart library required,
- *      same "self-contained" philosophy as Home.jsx.
+ *   2. Token selector — pick ANY supported token; everything below
+ *      reloads for that token.
+ *   3. Live Stats grid (price / 24h change / market cap / volume /
+ *      circulating supply, plus Staked & Burned when INJ is selected)
+ *   4. Detail strip (rank / ATH / ATH change / total & max supply)
+ *   5. Chart panel — pick a metric and a range (1H / 24H / 7D / 30D),
+ *      renders as an SVG area+line chart with a hover tooltip. No
+ *      external chart library required.
  *
  * Data sources (backend, MongoDB-backed, see stats.controller.js):
- *   GET /api/dashboard/stats    -> current snapshot (price/staked/burned/volume/mcap)
- *   GET /api/dashboard/history  -> time-series points for the chart
+ *   GET /api/dashboard/tokens                    -> supported token list
+ *   GET /api/dashboard/stats?token=...            -> current snapshot
+ *   GET /api/dashboard/history?token=...          -> time-series points
  *
  * Props:
  *   apiBaseUrl?: string — defaults to the live backend origin, same
@@ -27,15 +31,28 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 // ---------------- API base URL (same convention as Home.jsx) ----------------
 const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
+const DEFAULT_TOKEN_ID = "injective-protocol";
+
 // ---------------- Fallback / empty states ----------------
 const FALLBACK_STATS = {
-  injPriceUsd: null,
-  injPriceChange24h: null,
+  tokenId: DEFAULT_TOKEN_ID,
+  tokenSymbol: null,
+  tokenName: null,
+  priceUsd: null,
+  priceChange24h: null,
   marketCapUsd: null,
+  marketCapRank: null,
+  volume24hUsd: null,
+  circulatingSupply: null,
+  totalSupply: null,
+  maxSupply: null,
+  athUsd: null,
+  athChangePercent: null,
   totalStakedInj: null,
   totalBurnedInj: null,
-  helixVolume24hUsd: null,
 };
+
+const FALLBACK_TOKENS = [{ id: DEFAULT_TOKEN_ID, symbol: "INJ", name: "Injective" }];
 
 const RANGES = [
   { key: "1h", label: "1H" },
@@ -44,28 +61,41 @@ const RANGES = [
   { key: "30d", label: "30D" },
 ];
 
-const METRICS = [
-  { key: "injPriceUsd", label: "Price", unit: "usd", color: "signal" },
-  { key: "totalStakedInj", label: "Staked", unit: "inj", color: "amber" },
-  { key: "totalBurnedInj", label: "Burned", unit: "inj", color: "danger" },
-  { key: "helixVolume24hUsd", label: "Helix Volume", unit: "usd", color: "signal" },
+// Metrics available for every token.
+const BASE_METRICS = [
+  { key: "priceUsd", label: "Price", unit: "usd", color: "signal" },
   { key: "marketCapUsd", label: "Market Cap", unit: "usd", color: "amber" },
+  { key: "volume24hUsd", label: "24H Volume", unit: "usd", color: "signal" },
+  { key: "circulatingSupply", label: "Circulating Supply", unit: "token", color: "amber" },
 ];
 
-// ---------------- Formatting helpers (same scaling as Home.jsx) ----------------
+// Extra metrics that only make sense for INJ (staking + burns).
+const INJ_ONLY_METRICS = [
+  { key: "totalStakedInj", label: "Staked", unit: "token", color: "amber" },
+  { key: "totalBurnedInj", label: "Burned", unit: "token", color: "danger" },
+];
+
+function metricsForToken(tokenId) {
+  return tokenId === DEFAULT_TOKEN_ID ? [...BASE_METRICS, ...INJ_ONLY_METRICS] : BASE_METRICS;
+}
+
+// ---------------- Formatting helpers ----------------
 function formatUsd(value) {
   if (value === null || value === undefined) return "—";
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  if (value < 1 && value > 0) return `$${value.toFixed(6)}`;
   return `$${value.toFixed(2)}`;
 }
 
-function formatInj(value) {
+function formatToken(value, symbol) {
   if (value === null || value === undefined) return "—";
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M INJ`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K INJ`;
-  return `${value.toFixed(2)} INJ`;
+  const suffix = symbol ? ` ${symbol}` : "";
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B${suffix}`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M${suffix}`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K${suffix}`;
+  return `${value.toFixed(2)}${suffix}`;
 }
 
 function formatChange(value) {
@@ -74,8 +104,8 @@ function formatChange(value) {
   return `${sign}${value.toFixed(2)}%`;
 }
 
-function formatByUnit(value, unit) {
-  return unit === "usd" ? formatUsd(value) : formatInj(value);
+function formatByUnit(value, unit, symbol) {
+  return unit === "usd" ? formatUsd(value) : formatToken(value, symbol);
 }
 
 function formatAxisTime(dateStr, range) {
@@ -87,24 +117,45 @@ function formatAxisTime(dateStr, range) {
 }
 
 export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
+  // ---------------- token selection ----------------
+  const [tokens, setTokens] = useState(FALLBACK_TOKENS);
+  const [selectedToken, setSelectedToken] = useState(DEFAULT_TOKEN_ID);
+
   const [stats, setStats] = useState(FALLBACK_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const [range, setRange] = useState("24h");
-  const [metric, setMetric] = useState("injPriceUsd");
+  const [metric, setMetric] = useState("priceUsd");
   const [points, setPoints] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(false);
 
   const [mounted, setMounted] = useState(false);
 
-  // ---------------- fetch current stats, poll every 30s ----------------
+  const activeTokenMeta = tokens.find((t) => t.id === selectedToken);
+  const availableMetrics = useMemo(() => metricsForToken(selectedToken), [selectedToken]);
+
+  // ---------------- fetch supported token list, once ----------------
+  const loadTokens = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/dashboard/tokens`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.tokens) && data.tokens.length) {
+        setTokens(data.tokens);
+      }
+    } catch (err) {
+      console.error("Failed to load token list:", err);
+    }
+  }, [apiBaseUrl]);
+
+  // ---------------- fetch current stats for the selected token, poll every 30s ----------------
   const loadStats = useCallback(async () => {
     setStatsError(false);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/dashboard/stats`);
+      const res = await fetch(`${apiBaseUrl}/api/dashboard/stats?token=${selectedToken}`);
       if (!res.ok) {
         setStatsError(true);
         return;
@@ -122,15 +173,15 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
     } finally {
       setStatsLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedToken]);
 
-  // ---------------- fetch chart history whenever range/metric changes ----------------
+  // ---------------- fetch chart history whenever token/range/metric changes ----------------
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(false);
     try {
       const res = await fetch(
-        `${apiBaseUrl}/api/dashboard/history?range=${range}&metric=${metric}`
+        `${apiBaseUrl}/api/dashboard/history?token=${selectedToken}&range=${range}&metric=${metric}`
       );
       if (!res.ok) {
         setHistoryError(true);
@@ -151,20 +202,35 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [apiBaseUrl, range, metric]);
+  }, [apiBaseUrl, selectedToken, range, metric]);
 
   useEffect(() => {
     setMounted(true);
+    loadTokens();
+  }, [loadTokens]);
+
+  useEffect(() => {
+    setStatsLoading(true);
     loadStats();
-    const interval = setInterval(loadStats, 30_000); // live price refresh every 30s
+    const interval = setInterval(loadStats, 30_000); // live refresh every 30s
     return () => clearInterval(interval);
   }, [loadStats]);
+
+  // If the current metric doesn't exist for the newly selected token
+  // (e.g. switching away from INJ while "Staked" was active), fall
+  // back to Price rather than requesting an invalid metric.
+  useEffect(() => {
+    if (!availableMetrics.some((m) => m.key === metric)) {
+      setMetric("priceUsd");
+    }
+  }, [availableMetrics, metric]);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
-  const activeMetric = METRICS.find((m) => m.key === metric);
+  const activeMetric = availableMetrics.find((m) => m.key === metric) || availableMetrics[0];
+  const tokenSymbol = stats.tokenSymbol || activeTokenMeta?.symbol || "";
 
   return (
     <>
@@ -178,10 +244,12 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               <span className="db-live-dot" />
               LIVE NETWORK DASHBOARD
             </span>
-            <h1 className="db-title">Injective, in real time</h1>
+            <h1 className="db-title">
+              {stats.tokenName || "Crypto"}, in real time
+            </h1>
             <p className="db-sub">
-              Price, staking, burns, and volume — refreshed automatically. Pick a
-              metric below to chart it over time.
+              Price, market cap, volume, and supply — refreshed automatically.
+              Switch tokens below, or pick a metric to chart it over time.
             </p>
           </div>
           <div className="db-header-meta">
@@ -202,48 +270,92 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
           </div>
         </header>
 
+        {/* ---------------- Token selector ---------------- */}
+        <TokenSelector
+          tokens={tokens}
+          selectedToken={selectedToken}
+          onSelect={setSelectedToken}
+        />
+
         {/* ---------------- Live stats grid ---------------- */}
         <section className="db-stats-grid">
           <StatCard
-            label="INJ Price"
-            value={statsLoading ? null : formatUsd(stats.injPriceUsd)}
-            delta={statsLoading ? null : formatChange(stats.injPriceChange24h)}
-            deltaPositive={stats.injPriceChange24h >= 0}
+            label={`${tokenSymbol || "Token"} Price`}
+            value={statsLoading ? null : formatUsd(stats.priceUsd)}
+            delta={statsLoading ? null : formatChange(stats.priceChange24h)}
+            deltaPositive={stats.priceChange24h >= 0}
             loading={statsLoading}
-            active={metric === "injPriceUsd"}
-            onClick={() => setMetric("injPriceUsd")}
-          />
-          <StatCard
-            label="Total Staked"
-            value={statsLoading ? null : formatInj(stats.totalStakedInj)}
-            sub="Bonded to validators"
-            loading={statsLoading}
-            active={metric === "totalStakedInj"}
-            onClick={() => setMetric("totalStakedInj")}
-          />
-          <StatCard
-            label="Total Burned"
-            value={statsLoading ? null : formatInj(stats.totalBurnedInj)}
-            sub="Weekly auction burns"
-            loading={statsLoading}
-            active={metric === "totalBurnedInj"}
-            onClick={() => setMetric("totalBurnedInj")}
-          />
-          <StatCard
-            label="Helix 24H Volume"
-            value={statsLoading ? null : formatUsd(stats.helixVolume24hUsd)}
-            sub="On-chain order book"
-            loading={statsLoading}
-            active={metric === "helixVolume24hUsd"}
-            onClick={() => setMetric("helixVolume24hUsd")}
+            active={metric === "priceUsd"}
+            onClick={() => setMetric("priceUsd")}
           />
           <StatCard
             label="Market Cap"
             value={statsLoading ? null : formatUsd(stats.marketCapUsd)}
-            sub="Circulating supply × price"
+            sub={stats.marketCapRank ? `Rank #${stats.marketCapRank}` : "Circulating × price"}
             loading={statsLoading}
             active={metric === "marketCapUsd"}
             onClick={() => setMetric("marketCapUsd")}
+          />
+          <StatCard
+            label="24H Volume"
+            value={statsLoading ? null : formatUsd(stats.volume24hUsd)}
+            sub="Across tracked markets"
+            loading={statsLoading}
+            active={metric === "volume24hUsd"}
+            onClick={() => setMetric("volume24hUsd")}
+          />
+          <StatCard
+            label="Circulating Supply"
+            value={statsLoading ? null : formatToken(stats.circulatingSupply, tokenSymbol)}
+            sub="Currently in circulation"
+            loading={statsLoading}
+            active={metric === "circulatingSupply"}
+            onClick={() => setMetric("circulatingSupply")}
+          />
+          {selectedToken === DEFAULT_TOKEN_ID && (
+            <>
+              <StatCard
+                label="Total Staked"
+                value={statsLoading ? null : formatToken(stats.totalStakedInj, "INJ")}
+                sub="Bonded to validators"
+                loading={statsLoading}
+                active={metric === "totalStakedInj"}
+                onClick={() => setMetric("totalStakedInj")}
+              />
+              <StatCard
+                label="Total Burned"
+                value={statsLoading ? null : formatToken(stats.totalBurnedInj, "INJ")}
+                sub="Weekly auction burns (est.)"
+                loading={statsLoading}
+                active={metric === "totalBurnedInj"}
+                onClick={() => setMetric("totalBurnedInj")}
+              />
+            </>
+          )}
+        </section>
+
+        {/* ---------------- Detail strip ---------------- */}
+        <section className="db-detail-strip">
+          <DetailItem
+            label="All-Time High"
+            value={statsLoading ? null : formatUsd(stats.athUsd)}
+            loading={statsLoading}
+          />
+          <DetailItem
+            label="From ATH"
+            value={statsLoading ? null : formatChange(stats.athChangePercent)}
+            valueClass={stats.athChangePercent >= 0 ? "db-up" : "db-down"}
+            loading={statsLoading}
+          />
+          <DetailItem
+            label="Total Supply"
+            value={statsLoading ? null : formatToken(stats.totalSupply, tokenSymbol)}
+            loading={statsLoading}
+          />
+          <DetailItem
+            label="Max Supply"
+            value={statsLoading ? null : (stats.maxSupply ? formatToken(stats.maxSupply, tokenSymbol) : "Uncapped")}
+            loading={statsLoading}
           />
         </section>
 
@@ -251,7 +363,7 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
         <section className="db-chart-panel">
           <div className="db-chart-controls">
             <div className="db-metric-tabs">
-              {METRICS.map((m) => (
+              {availableMetrics.map((m) => (
                 <button
                   key={m.key}
                   className={`db-metric-tab ${metric === m.key ? "db-metric-tab-active" : ""}`}
@@ -275,7 +387,10 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
           </div>
 
           <div className="db-chart-head">
-            <span className="db-chart-metric-name">{activeMetric.label}</span>
+            <span className="db-chart-metric-name">
+              {activeMetric.label}
+              {tokenSymbol ? ` · ${tokenSymbol}` : ""}
+            </span>
             {historyError && (
               <button className="db-retry" onClick={loadHistory}>
                 Retry
@@ -288,12 +403,88 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
             loading={historyLoading}
             error={historyError}
             unit={activeMetric.unit}
+            tokenSymbol={tokenSymbol}
             colorVar={activeMetric.color}
             range={range}
           />
         </section>
       </div>
     </>
+  );
+}
+
+// ---------------- Token selector ----------------
+function TokenSelector({ tokens, selectedToken, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef(null);
+
+  const active = tokens.find((t) => t.id === selectedToken) || tokens[0];
+
+  const filtered = tokens.filter((t) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q);
+  });
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="db-token-selector" ref={wrapRef}>
+      <button
+        type="button"
+        className="db-token-trigger"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="db-token-badge">{active?.symbol?.slice(0, 1) || "?"}</span>
+        <span className="db-token-trigger-text">
+          <span className="db-token-trigger-name">{active?.name || "Select token"}</span>
+          <span className="db-token-trigger-symbol">{active?.symbol}</span>
+        </span>
+        <span className={`db-token-chevron ${open ? "db-token-chevron-open" : ""}`}>▾</span>
+      </button>
+
+      {open && (
+        <div className="db-token-dropdown">
+          <input
+            autoFocus
+            className="db-token-search"
+            placeholder="Search tokens…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="db-token-list">
+            {filtered.length === 0 && (
+              <div className="db-token-empty">No tokens match "{query}"</div>
+            )}
+            {filtered.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`db-token-option ${t.id === selectedToken ? "db-token-option-active" : ""}`}
+                onClick={() => {
+                  onSelect(t.id);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                <span className="db-token-badge db-token-badge-sm">{t.symbol.slice(0, 1)}</span>
+                <span className="db-token-option-name">{t.name}</span>
+                <span className="db-token-option-symbol">{t.symbol}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -319,8 +510,22 @@ function StatCard({ label, value, delta, deltaPositive, sub, loading, active, on
   );
 }
 
+// ---------------- Detail item (small read-only stat, non-clickable) ----------------
+function DetailItem({ label, value, valueClass, loading }) {
+  return (
+    <div className="db-detail-item">
+      <span className="db-detail-label">{label}</span>
+      {loading ? (
+        <span className="db-detail-skeleton" />
+      ) : (
+        <span className={`db-detail-value ${valueClass || ""}`}>{value ?? "—"}</span>
+      )}
+    </div>
+  );
+}
+
 // ---------------- Chart (hand-rolled SVG line + area, no dependency) ----------------
-function Chart({ points, loading, error, unit, colorVar, range }) {
+function Chart({ points, loading, error, unit, tokenSymbol, colorVar, range }) {
   const svgRef = useRef(null);
   const [hoverIndex, setHoverIndex] = useState(null);
 
@@ -453,14 +658,14 @@ function Chart({ points, loading, error, unit, colorVar, range }) {
           className="db-chart-tooltip"
           style={{ left: `${(hovered.x / width) * 100}%` }}
         >
-          <span className="db-chart-tooltip-value">{formatByUnit(hovered.v, unit)}</span>
+          <span className="db-chart-tooltip-value">{formatByUnit(hovered.v, unit, tokenSymbol)}</span>
           <span className="db-chart-tooltip-time">{formatAxisTime(hovered.t, range)}</span>
         </div>
       )}
 
       <div className="db-chart-minmax">
-        <span>Low: {formatByUnit(minV, unit)}</span>
-        <span>High: {formatByUnit(maxV, unit)}</span>
+        <span>Low: {formatByUnit(minV, unit, tokenSymbol)}</span>
+        <span>High: {formatByUnit(maxV, unit, tokenSymbol)}</span>
       </div>
     </div>
   );
@@ -515,7 +720,7 @@ const STYLES = `
 .db-header {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 20px; flex-wrap: wrap;
-  margin-bottom: clamp(24px, 4vw, 36px);
+  margin-bottom: clamp(20px, 3vw, 28px);
 }
 .db-eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
@@ -543,12 +748,61 @@ const STYLES = `
   padding: 6px 10px; border-radius: 6px; cursor: pointer;
 }
 
+/* ---------------- Token selector ---------------- */
+.db-token-selector { position: relative; margin-bottom: clamp(20px, 3vw, 28px); width: fit-content; }
+.db-token-trigger {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--nv-panel); border: 1px solid var(--nv-hairline); border-radius: 10px;
+  padding: 10px 14px; cursor: pointer; color: inherit; font-family: inherit;
+  min-width: 220px; transition: border-color 0.15s ease;
+}
+.db-token-trigger:hover { border-color: var(--nv-signal); }
+.db-token-badge {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--nv-signal-dim); color: var(--nv-signal);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--nv-font-display); font-weight: 700; font-size: 12px;
+  flex-shrink: 0;
+}
+.db-token-badge-sm { width: 22px; height: 22px; font-size: 11px; }
+.db-token-trigger-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; flex: 1; text-align: left; }
+.db-token-trigger-name { font-size: 13.5px; font-weight: 600; }
+.db-token-trigger-symbol { font-family: var(--nv-font-mono); font-size: 11px; color: var(--nv-text-faint); }
+.db-token-chevron { color: var(--nv-text-faint); font-size: 12px; transition: transform 0.15s ease; }
+.db-token-chevron-open { transform: rotate(180deg); }
+
+.db-token-dropdown {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 20;
+  width: 280px; max-width: 90vw;
+  background: #11151a; border: 1px solid var(--nv-hairline); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.db-token-search {
+  width: 100%; padding: 12px 14px; background: transparent; color: var(--nv-text);
+  border: none; border-bottom: 1px solid var(--nv-hairline); font-family: inherit; font-size: 13px;
+  outline: none;
+}
+.db-token-search::placeholder { color: var(--nv-text-faint); }
+.db-token-list { max-height: 260px; overflow-y: auto; padding: 6px; }
+.db-token-option {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: transparent; border: none; border-radius: 8px;
+  padding: 9px 10px; cursor: pointer; color: inherit; font-family: inherit;
+  text-align: left;
+}
+.db-token-option:hover { background: var(--nv-hairline-soft); }
+.db-token-option-active { background: var(--nv-signal-dim); }
+.db-token-option-name { font-size: 13px; flex: 1; }
+.db-token-option-symbol { font-family: var(--nv-font-mono); font-size: 11px; color: var(--nv-text-faint); }
+.db-token-empty { padding: 16px; text-align: center; font-size: 12.5px; color: var(--nv-text-faint); }
+
 /* ---------------- Stats grid ---------------- */
 .db-stats-grid {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
   background: var(--nv-hairline); border: 1px solid var(--nv-hairline);
   border-radius: 10px; overflow: hidden;
-  margin-bottom: clamp(24px, 4vw, 36px);
+  margin-bottom: 1px;
 }
 .db-stat-card {
   background: var(--nv-panel); border: none; cursor: pointer; text-align: left;
@@ -559,7 +813,7 @@ const STYLES = `
 .db-stat-card:hover { background: #101419; }
 .db-stat-card-active { background: var(--nv-signal-dim); box-shadow: inset 0 -2px 0 var(--nv-signal); }
 .db-stat-label { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); }
-.db-stat-value { font-family: var(--nv-font-display); font-weight: 700; font-size: clamp(17px, 2vw, 21px); color: var(--nv-text); }
+.db-stat-value { font-family: var(--nv-font-display); font-weight: 700; font-size: clamp(16px, 1.8vw, 20px); color: var(--nv-text); }
 .db-stat-delta { font-family: var(--nv-font-mono); font-size: 12px; font-weight: 500; }
 .db-stat-sub { font-size: 11.5px; color: var(--nv-text-faint); }
 .db-stat-skeleton {
@@ -571,6 +825,26 @@ const STYLES = `
 @keyframes db-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .db-up { color: var(--nv-signal) !important; }
 .db-down { color: var(--nv-danger) !important; }
+
+/* ---------------- Detail strip ---------------- */
+.db-detail-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-top: none;
+  border-radius: 0 0 10px 10px; overflow: hidden;
+  margin-bottom: clamp(24px, 4vw, 36px);
+}
+.db-detail-item {
+  background: #0a0c0f; padding: 12px clamp(16px, 3vw, 20px);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.db-detail-label { font-family: var(--nv-font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--nv-text-faint); }
+.db-detail-value { font-family: var(--nv-font-mono); font-size: 13px; font-weight: 500; color: var(--nv-text-dim); }
+.db-detail-skeleton {
+  width: 50%; height: 14px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--nv-hairline-soft) 25%, var(--nv-hairline) 50%, var(--nv-hairline-soft) 75%);
+  background-size: 200% 100%;
+  animation: db-shimmer 1.4s ease-in-out infinite;
+}
 
 /* ---------------- Chart panel ---------------- */
 .db-chart-panel {
@@ -634,11 +908,12 @@ const STYLES = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .db-live-dot, .db-stat-skeleton, .db-chart-skeleton { animation: none !important; }
+  .db-live-dot, .db-stat-skeleton, .db-chart-skeleton, .db-detail-skeleton { animation: none !important; }
 }
 
 @media (max-width: 860px) {
   .db-stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .db-detail-strip { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 560px) {
   .db-stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -646,5 +921,6 @@ const STYLES = `
 }
 @media (max-width: 380px) {
   .db-stats-grid { grid-template-columns: 1fr; }
+  .db-detail-strip { grid-template-columns: 1fr; }
 }
 `;
