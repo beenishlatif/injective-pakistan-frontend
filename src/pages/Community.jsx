@@ -3,7 +3,8 @@
  * ------------------------------------------------------------------
  * Full-page "Community Hub" for the Injective Pakistan website.
  * Introduces the community, shows live stats, why-join benefits,
- * featured members, upcoming events, and resource links.
+ * a "how to join" walkthrough, featured members, upcoming events,
+ * and resource links.
  *
  * Render as a full page/route (e.g. /community), not as a widget.
  * Visually matches AIAssistant.jsx (same dark palette, Space
@@ -71,6 +72,21 @@ const BENEFITS = [
     title: "Early access",
     body: "First look at new Injective tooling, testnets and local events before they're announced publicly.",
     icon: "compass",
+  },
+];
+
+const JOIN_STEPS = [
+  {
+    title: "Say hello on Telegram",
+    body: "Open the group and introduce yourself — one line on whether you trade, build, or both.",
+  },
+  {
+    title: "Get matched to a working group",
+    body: "A team member routes you to the Traders, Builders, or Research channel based on what you're doing.",
+  },
+  {
+    title: "Show up to the next meetup",
+    body: "Join an AMA, workshop, or city meetup — most people make their first real connection there.",
   },
 ];
 
@@ -241,6 +257,26 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
           </div>
         </section>
 
+        {/* ---------------- How to join ---------------- */}
+        <section className="ch-section">
+          <div className="ch-section-head">
+            <span className="ch-section-eyebrow">Getting in</span>
+            <h2 className="ch-section-title">Three steps, no gatekeeping</h2>
+          </div>
+          <div className="ch-steps">
+            {JOIN_STEPS.map((s, i) => (
+              <div className="ch-step" key={s.title}>
+                <div className="ch-step-marker">
+                  <span>{i + 1}</span>
+                </div>
+                {i < JOIN_STEPS.length - 1 && <span className="ch-step-connector" />}
+                <h3 className="ch-step-title">{s.title}</h3>
+                <p className="ch-step-body">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* ---------------- Featured members ---------------- */}
         <section className="ch-section">
           <div className="ch-section-head">
@@ -255,7 +291,13 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               ))}
             </div>
           ) : members.length === 0 ? (
-            <p className="ch-muted">No featured members yet — check back soon.</p>
+            <EmptyState
+              icon="members"
+              title="No members featured yet"
+              body="Members get featured here once they've made a mark — a shipped project, a sharp trade breakdown, or consistent help in the channels."
+              actionLabel="Introduce yourself"
+              actionHref="https://t.me"
+            />
           ) : (
             <div className="ch-members-grid">
               {members.map((m, i) => (
@@ -287,7 +329,13 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               ))}
             </div>
           ) : events.length === 0 ? (
-            <p className="ch-muted">No events scheduled right now — follow Telegram for announcements.</p>
+            <EmptyState
+              icon="calendar"
+              title="Nothing on the calendar right now"
+              body="Meetups and AMAs get announced on Telegram first, usually with a few days' notice — turn on notifications so you don't miss the next one."
+              actionLabel="Follow on Telegram"
+              actionHref="https://t.me"
+            />
           ) : (
             <div className="ch-events-list">
               {events.map((e, i) => {
@@ -355,6 +403,46 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
         </footer>
       </div>
     </>
+  );
+}
+
+function EmptyState({ icon, title, body, actionLabel, actionHref }) {
+  return (
+    <div className="ch-empty">
+      <div className="ch-empty-icon">
+        <EmptyIcon name={icon} />
+      </div>
+      <h3 className="ch-empty-title">{title}</h3>
+      <p className="ch-empty-body">{body}</p>
+      {actionLabel && actionHref && (
+        <a className="ch-empty-action" href={actionHref} target="_blank" rel="noreferrer">
+          {actionLabel}
+          <ArrowIcon />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function EmptyIcon({ name }) {
+  const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
+  if (name === "calendar") {
+    return (
+      <svg {...common}>
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+        <path d="M3.5 9.5h17" strokeLinecap="round" />
+        <path d="M8 3v3.5M16 3v3.5" strokeLinecap="round" />
+        <path d="M8 13.5h.01M12 13.5h.01M16 13.5h.01M8 17h.01M12 17h.01" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="9" cy="9" r="3.3" />
+      <path d="M3.5 19.5c0-3.3 2.5-5.8 5.5-5.8s5.5 2.5 5.5 5.8" strokeLinecap="round" />
+      <circle cx="17" cy="8" r="2.4" opacity="0.6" />
+      <path d="M20.5 18.8c-.15-2.5-1.6-4.4-3.6-5" strokeLinecap="round" opacity="0.6" />
+    </svg>
   );
 }
 
@@ -504,6 +592,7 @@ const STYLES = `
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 .ch-btn:hover { transform: translateY(-1px); }
+.ch-btn:focus-visible { outline: 2px solid var(--nv-signal); outline-offset: 2px; }
 .ch-btn-primary { background: var(--nv-signal); color: #061412; border-color: var(--nv-signal); }
 .ch-btn-primary:hover { background: #5be3d1; }
 .ch-btn-ghost { background: transparent; color: var(--nv-text); border-color: var(--nv-hairline); }
@@ -561,7 +650,8 @@ const STYLES = `
   border-radius: 10px;
   overflow: hidden;
 }
-.ch-pillar { background: var(--nv-panel); padding: 26px 24px; }
+.ch-pillar { background: var(--nv-panel); padding: 26px 24px; transition: background 0.15s ease; }
+.ch-pillar:hover { background: #10141a; }
 .ch-pillar-index {
   display: block;
   font-family: var(--nv-font-mono);
@@ -612,6 +702,47 @@ const STYLES = `
   color: var(--nv-text);
 }
 .ch-benefit-body { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0; }
+
+/* ---------------- How to join steps ---------------- */
+.ch-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+}
+.ch-step { position: relative; padding-top: 4px; }
+.ch-step-marker {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nv-panel);
+  border: 1px solid var(--nv-signal);
+  color: var(--nv-signal);
+  font-family: var(--nv-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  position: relative;
+  z-index: 1;
+}
+.ch-step-connector {
+  position: absolute;
+  top: 17px;
+  left: 34px;
+  width: calc(100% - 34px + 28px);
+  height: 1px;
+  background: var(--nv-hairline);
+}
+.ch-step-title {
+  font-family: var(--nv-font-display);
+  font-weight: 700;
+  font-size: 15.5px;
+  margin: 0 0 8px;
+  color: var(--nv-text);
+}
+.ch-step-body { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0; }
 
 /* ---------------- Featured members ---------------- */
 .ch-members-grid {
@@ -668,7 +799,8 @@ const STYLES = `
 
 /* ---------------- Events ---------------- */
 .ch-events-list { display: flex; flex-direction: column; gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
-.ch-event-row { display: flex; gap: 18px; padding: 20px 22px; background: var(--nv-panel); align-items: flex-start; }
+.ch-event-row { display: flex; gap: 18px; padding: 20px 22px; background: var(--nv-panel); align-items: flex-start; transition: background 0.15s ease; }
+.ch-event-row:hover { background: #10141a; }
 .ch-event-date {
   display: flex;
   flex-direction: column;
@@ -685,6 +817,60 @@ const STYLES = `
 .ch-event-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 15.5px; margin: 0 0 6px; color: var(--nv-text); }
 .ch-event-desc { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0 0 8px; }
 .ch-event-meta { display: flex; gap: 14px; font-family: var(--nv-font-mono); font-size: 11px; color: var(--nv-text-faint); }
+
+/* ---------------- Empty states ---------------- */
+.ch-empty {
+  border: 1px dashed var(--nv-hairline);
+  border-radius: 10px;
+  padding: clamp(32px, 5vw, 48px) clamp(20px, 5vw, 40px);
+  text-align: center;
+  max-width: 480px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.012);
+}
+.ch-empty-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nv-signal-dim);
+  color: var(--nv-signal);
+  border: 1px solid var(--nv-hairline);
+  margin: 0 auto 18px;
+}
+.ch-empty-title {
+  font-family: var(--nv-font-display);
+  font-weight: 700;
+  font-size: 15.5px;
+  margin: 0 0 8px;
+  color: var(--nv-text);
+}
+.ch-empty-body {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--nv-text-dim);
+  margin: 0 0 20px;
+}
+.ch-empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--nv-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nv-signal);
+  text-decoration: none;
+  border: 1px solid var(--nv-hairline);
+  background: var(--nv-signal-dim);
+  padding: 10px 16px;
+  border-radius: 7px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.ch-empty-action:hover { border-color: var(--nv-signal); transform: translateY(-1px); }
 
 /* ---------------- Skeleton loading ---------------- */
 .ch-skeleton {
@@ -742,6 +928,10 @@ const STYLES = `
 }
 
 /* ---------------- Responsive ---------------- */
+@media (max-width: 720px) {
+  .ch-steps { grid-template-columns: 1fr; gap: 30px; }
+  .ch-step-connector { display: none; }
+}
 @media (max-width: 560px) {
   .ch-hero-actions { flex-direction: column; align-items: stretch; }
   .ch-stat-row { gap: 28px; }
