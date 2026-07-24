@@ -305,10 +305,21 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   );
 
   const activeMetric = METRICS.find((m) => m.key === metricKey) || METRICS[0];
-  const metricSeries = useMemo(
-    () => history.map((s) => s[metricKey]).filter((v) => v !== null && v !== undefined),
-    [history, metricKey]
-  );
+
+  // FIX: metricSeries aur metricLabels ko ek hi filtered source se banaya gaya hai,
+  // taake dono ki length/index hamesha match kare. Pehle labels "history" (unfiltered)
+  // se ban rahe the jabke metricSeries filtered (null values hataye gaye) tha —
+  // isi mismatch ki wajah se Sparkline ke andar points[i] undefined ho jaata tha
+  // aur "Cannot read properties of undefined (reading '0')" crash aata tha.
+  const { metricSeries, metricLabels } = useMemo(() => {
+    const filtered = history.filter(
+      (s) => s[metricKey] !== null && s[metricKey] !== undefined
+    );
+    return {
+      metricSeries: filtered.map((s) => s[metricKey]),
+      metricLabels: filtered.map((s) => formatTime(s.createdAt, range)),
+    };
+  }, [history, metricKey, range]);
 
   const activeCurrency = CURRENCIES.find((c) => c.key === currency) || CURRENCIES[0];
   const heroPrice = stats ? stats[activeCurrency.field] : null;
@@ -546,7 +557,7 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
                     positive={(stats?.injPriceChange24h ?? 0) >= 0}
                     height={220}
                     showAxis
-                    labels={history.map((s) => formatTime(s.createdAt, range))}
+                    labels={metricLabels}
                     valueFormat={activeMetric.format}
                   />
                 </div>
@@ -951,7 +962,7 @@ function Sparkline({ values, positive = true, height = 72, showAxis = false, lab
 
         {showAxis &&
           labels.map((label, i) =>
-            i % labelStep === 0 ? (
+            i % labelStep === 0 && points[i] ? (
               <text
                 key={i}
                 x={points[i][0]}
