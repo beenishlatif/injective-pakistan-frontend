@@ -2,40 +2,15 @@
  * Community.jsx
  * ------------------------------------------------------------------
  * Full-page "Community Hub" for the Injective Pakistan website.
- * Introduces the community, shows live stats, why-join benefits,
- * a "how to join" walkthrough, featured members, upcoming events,
- * and resource links.
+ * Introduces the community, why-join benefits, a "how to join"
+ * walkthrough, featured members, upcoming events, and resource links.
  *
  * Render as a full page/route (e.g. /community), not as a widget.
  * Visually matches AIAssistant.jsx (same dark palette, Space
  * Grotesk / Inter / IBM Plex Mono type system, teal signal accent +
  * amber highlight) so the two pages feel like one product.
- *
- * Data comes from the community module backend:
- *   GET  /api/community/stats
- *   GET  /api/community/members/featured
- *   GET  /api/community/events
- *
- * Props:
- *   apiBaseUrl?: string — defaults to the live backend origin (see
- *   DEFAULT_API_BASE_URL below). If the frontend and backend are
- *   ever deployed on the SAME domain (e.g. Vercel rewrites/proxy is
- *   set up), you can override this back to '' so calls stay
- *   same-origin instead.
  * ------------------------------------------------------------------
  */
-
-import { useState, useEffect, useCallback } from "react";
-
-// ---------------- API base URL ----------------
-// The frontend and backend are deployed on two different Vercel
-// domains, so same-origin ("") fetches to /api/community/... were
-// hitting the FRONTEND's own domain (which has no such route) and
-// getting back Vercel's HTML "page not found" response instead of
-// JSON — hence the data not loading after deployment even though it
-// worked locally. Pointing this at the actual backend origin fixes
-// that (same fix already applied in Home.jsx).
-const DEFAULT_API_BASE_URL = "https://injective-pakistan-backend-2gbb.vercel.app";
 
 const PILLARS = [
   {
@@ -96,82 +71,7 @@ const RESOURCE_LINKS = [
   { label: "Injective on X", href: "https://twitter.com/Injective" },
 ];
 
-function initials(name) {
-  if (!name) return "?";
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
-}
-
-function formatEventDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { day: "--", month: "---", full: "" };
-  return {
-    day: date.toLocaleDateString([], { day: "2-digit" }),
-    month: date.toLocaleDateString([], { month: "short" }).toUpperCase(),
-    full: date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
-    time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  };
-}
-
-export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
-  const [stats, setStats] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [membersLoading, setMembersLoading] = useState(true);
-  const [events, setEvents] = useState([]);
-  const [eventsLoading, setEventsLoading] = useState(true);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/community/stats`);
-      const data = await res.json();
-      if (res.ok && data.success) setStats(data.stats);
-    } catch (err) {
-      console.error("Failed to load community stats:", err);
-    }
-  }, [apiBaseUrl]);
-
-  const fetchMembers = useCallback(async () => {
-    setMembersLoading(true);
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/community/members/featured`);
-      const data = await res.json();
-      if (res.ok && data.success) setMembers(data.members);
-    } catch (err) {
-      console.error("Failed to load featured members:", err);
-    } finally {
-      setMembersLoading(false);
-    }
-  }, [apiBaseUrl]);
-
-  const fetchEvents = useCallback(async () => {
-    setEventsLoading(true);
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/community/events`);
-      const data = await res.json();
-      if (res.ok && data.success) setEvents(data.events);
-    } catch (err) {
-      console.error("Failed to load events:", err);
-    } finally {
-      setEventsLoading(false);
-    }
-  }, [apiBaseUrl]);
-
-  useEffect(() => {
-    fetchStats();
-    fetchMembers();
-    fetchEvents();
-  }, [fetchStats, fetchMembers, fetchEvents]);
-
-  const statEntries = [
-    { label: "Members", value: stats?.members },
-    { label: "Cities", value: stats?.cities },
-    { label: "Meetups", value: stats?.events },
-  ];
-
+export default function Community() {
   return (
     <>
       <style>{STYLES}</style>
@@ -203,20 +103,9 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               >
                 Open Telegram
               </a>
-              <a className="ch-btn ch-btn-ghost" href="#events">
-                See upcoming events
+              <a className="ch-btn ch-btn-ghost" href="https://t.me" target="_blank" rel="noreferrer">
+                Join the Telegram group
               </a>
-            </div>
-
-            <div className="ch-stat-row">
-              {statEntries.map((s) => (
-                <div className="ch-stat" key={s.label}>
-                  <span className="ch-stat-value">
-                    {s.value === undefined || s.value === null ? "—" : s.value}
-                  </span>
-                  <span className="ch-stat-label">{s.label}</span>
-                </div>
-              ))}
             </div>
           </div>
         </section>
@@ -275,90 +164,6 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               </div>
             ))}
           </div>
-        </section>
-
-        {/* ---------------- Featured members ---------------- */}
-        <section className="ch-section">
-          <div className="ch-section-head">
-            <span className="ch-section-eyebrow">Who's in the room</span>
-            <h2 className="ch-section-title">Featured members</h2>
-          </div>
-
-          {membersLoading ? (
-            <div className="ch-members-grid">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div className="ch-member-card ch-skeleton" key={i} />
-              ))}
-            </div>
-          ) : members.length === 0 ? (
-            <EmptyState
-              icon="members"
-              title="No members featured yet"
-              body="Members get featured here once they've made a mark — a shipped project, a sharp trade breakdown, or consistent help in the channels."
-              actionLabel="Introduce yourself"
-              actionHref="https://t.me"
-            />
-          ) : (
-            <div className="ch-members-grid">
-              {members.map((m, i) => (
-                <div className="ch-member-card" key={m.id ?? m.email ?? i}>
-                  <div className="ch-member-avatar">{initials(m.name)}</div>
-                  <h3 className="ch-member-name">{m.name}</h3>
-                  {(m.role || m.title) && (
-                    <span className="ch-member-role">{m.role || m.title}</span>
-                  )}
-                  {m.city && <span className="ch-member-city">{m.city}</span>}
-                  {m.bio && <p className="ch-member-bio">{m.bio}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ---------------- Upcoming events ---------------- */}
-        <section className="ch-section" id="events">
-          <div className="ch-section-head">
-            <span className="ch-section-eyebrow">Mark your calendar</span>
-            <h2 className="ch-section-title">Upcoming events</h2>
-          </div>
-
-          {eventsLoading ? (
-            <div className="ch-events-list">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div className="ch-event-row ch-skeleton" key={i} />
-              ))}
-            </div>
-          ) : events.length === 0 ? (
-            <EmptyState
-              icon="calendar"
-              title="Nothing on the calendar right now"
-              body="Meetups and AMAs get announced on Telegram first, usually with a few days' notice — turn on notifications so you don't miss the next one."
-              actionLabel="Follow on Telegram"
-              actionHref="https://t.me"
-            />
-          ) : (
-            <div className="ch-events-list">
-              {events.map((e, i) => {
-                const d = formatEventDate(e.date || e.startsAt);
-                return (
-                  <div className="ch-event-row" key={e.id ?? i}>
-                    <div className="ch-event-date">
-                      <span className="ch-event-day">{d.day}</span>
-                      <span className="ch-event-month">{d.month}</span>
-                    </div>
-                    <div className="ch-event-body">
-                      <h3 className="ch-event-title">{e.title}</h3>
-                      {e.description && <p className="ch-event-desc">{e.description}</p>}
-                      <div className="ch-event-meta">
-                        {d.time && <span>{d.time}</span>}
-                        {e.location && <span>{e.location}</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </section>
 
         {/* ---------------- Resources / CTA ---------------- */}
@@ -597,22 +402,6 @@ const STYLES = `
 .ch-btn-primary:hover { background: #5be3d1; }
 .ch-btn-ghost { background: transparent; color: var(--nv-text); border-color: var(--nv-hairline); }
 .ch-btn-ghost:hover { border-color: var(--nv-signal); color: var(--nv-signal); background: var(--nv-signal-dim); }
-
-.ch-stat-row { display: flex; gap: clamp(28px, 5vw, 56px); flex-wrap: wrap; }
-.ch-stat { display: flex; flex-direction: column; gap: 4px; }
-.ch-stat-value {
-  font-family: var(--nv-font-display);
-  font-weight: 700;
-  font-size: 28px;
-  color: var(--nv-text);
-}
-.ch-stat-label {
-  font-family: var(--nv-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--nv-text-faint);
-}
 
 /* ---------------- Sections ---------------- */
 .ch-section {
@@ -934,7 +723,6 @@ const STYLES = `
 }
 @media (max-width: 560px) {
   .ch-hero-actions { flex-direction: column; align-items: stretch; }
-  .ch-stat-row { gap: 28px; }
   .ch-event-row { flex-direction: column; }
   .ch-footer { flex-direction: column; gap: 6px; align-items: flex-start; }
 }
