@@ -3,7 +3,7 @@
  * ------------------------------------------------------------------
  * Full-page "Community Hub" for the Injective Pakistan website.
  * Introduces the community, shows live stats, why-join benefits,
- * and a join form.
+ * featured members, upcoming events, and resource links.
  *
  * Render as a full page/route (e.g. /community), not as a widget.
  * Visually matches AIAssistant.jsx (same dark palette, Space
@@ -14,7 +14,6 @@
  *   GET  /api/community/stats
  *   GET  /api/community/members/featured
  *   GET  /api/community/events
- *   POST /api/community/join
  *
  * Props:
  *   apiBaseUrl?: string — defaults to the live backend origin (see
@@ -109,16 +108,6 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(true);
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    city: "",
-    telegramHandle: "",
-    bio: "",
-  });
-  const [formStatus, setFormStatus] = useState("idle"); // idle | submitting | success | error
-  const [formError, setFormError] = useState("");
-
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch(`${apiBaseUrl}/api/community/stats`);
@@ -161,38 +150,6 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
     fetchEvents();
   }, [fetchStats, fetchMembers, fetchEvents]);
 
-  function updateField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  async function handleJoinSubmit(e) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.email.trim()) {
-      setFormStatus("error");
-      setFormError("Name and email are required.");
-      return;
-    }
-    setFormStatus("submitting");
-    setFormError("");
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/community/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Something went wrong.");
-      }
-      setFormStatus("success");
-      setForm({ name: "", email: "", city: "", telegramHandle: "", bio: "" });
-      fetchStats();
-    } catch (err) {
-      setFormStatus("error");
-      setFormError(err.message || "Couldn't submit your request. Please try again.");
-    }
-  }
-
   const statEntries = [
     { label: "Members", value: stats?.members },
     { label: "Cities", value: stats?.cities },
@@ -222,16 +179,16 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
             </p>
 
             <div className="ch-hero-actions">
-              <a className="ch-btn ch-btn-primary" href="#join">
-                Join the community
-              </a>
               <a
-                className="ch-btn ch-btn-ghost"
+                className="ch-btn ch-btn-primary"
                 href="https://t.me"
                 target="_blank"
                 rel="noreferrer"
               >
                 Open Telegram
+              </a>
+              <a className="ch-btn ch-btn-ghost" href="#events">
+                See upcoming events
               </a>
             </div>
 
@@ -284,104 +241,110 @@ export default function Community({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
           </div>
         </section>
 
-        {/* ---------------- Join form ---------------- */}
-        <section className="ch-section ch-join-section" id="join">
-          <div className="ch-join-grid">
-            <div>
-              <span className="ch-section-eyebrow">Get involved</span>
-              <h2 className="ch-section-title">Join the community</h2>
-              <p className="ch-join-sub">
-                Tell us a little about yourself. Approved members get listed here and invited
-                to the private groups, workshops and meetups.
-              </p>
-              <div className="ch-resource-list">
-                {RESOURCE_LINKS.map((r) => (
-                  <a
-                    className="ch-resource-link"
-                    key={r.label}
-                    href={r.href}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ArrowIcon />
-                    <span>{r.label}</span>
-                  </a>
-                ))}
-              </div>
+        {/* ---------------- Featured members ---------------- */}
+        <section className="ch-section">
+          <div className="ch-section-head">
+            <span className="ch-section-eyebrow">Who's in the room</span>
+            <h2 className="ch-section-title">Featured members</h2>
+          </div>
+
+          {membersLoading ? (
+            <div className="ch-members-grid">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div className="ch-member-card ch-skeleton" key={i} />
+              ))}
             </div>
+          ) : members.length === 0 ? (
+            <p className="ch-muted">No featured members yet — check back soon.</p>
+          ) : (
+            <div className="ch-members-grid">
+              {members.map((m, i) => (
+                <div className="ch-member-card" key={m.id ?? m.email ?? i}>
+                  <div className="ch-member-avatar">{initials(m.name)}</div>
+                  <h3 className="ch-member-name">{m.name}</h3>
+                  {(m.role || m.title) && (
+                    <span className="ch-member-role">{m.role || m.title}</span>
+                  )}
+                  {m.city && <span className="ch-member-city">{m.city}</span>}
+                  {m.bio && <p className="ch-member-bio">{m.bio}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
-            <form className="ch-form" onSubmit={handleJoinSubmit}>
-              <div className="ch-form-row">
-                <label className="ch-field">
-                  <span>Name *</span>
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                    placeholder="Your full name"
-                    required
-                  />
-                </label>
-                <label className="ch-field">
-                  <span>Email *</span>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => updateField("email", e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                  />
-                </label>
-              </div>
+        {/* ---------------- Upcoming events ---------------- */}
+        <section className="ch-section" id="events">
+          <div className="ch-section-head">
+            <span className="ch-section-eyebrow">Mark your calendar</span>
+            <h2 className="ch-section-title">Upcoming events</h2>
+          </div>
 
-              <div className="ch-form-row">
-                <label className="ch-field">
-                  <span>City</span>
-                  <input
-                    type="text"
-                    value={form.city}
-                    onChange={(e) => updateField("city", e.target.value)}
-                    placeholder="Lahore, Karachi, Islamabad…"
-                  />
-                </label>
-                <label className="ch-field">
-                  <span>Telegram handle</span>
-                  <input
-                    type="text"
-                    value={form.telegramHandle}
-                    onChange={(e) => updateField("telegramHandle", e.target.value)}
-                    placeholder="@yourhandle"
-                  />
-                </label>
-              </div>
+          {eventsLoading ? (
+            <div className="ch-events-list">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div className="ch-event-row ch-skeleton" key={i} />
+              ))}
+            </div>
+          ) : events.length === 0 ? (
+            <p className="ch-muted">No events scheduled right now — follow Telegram for announcements.</p>
+          ) : (
+            <div className="ch-events-list">
+              {events.map((e, i) => {
+                const d = formatEventDate(e.date || e.startsAt);
+                return (
+                  <div className="ch-event-row" key={e.id ?? i}>
+                    <div className="ch-event-date">
+                      <span className="ch-event-day">{d.day}</span>
+                      <span className="ch-event-month">{d.month}</span>
+                    </div>
+                    <div className="ch-event-body">
+                      <h3 className="ch-event-title">{e.title}</h3>
+                      {e.description && <p className="ch-event-desc">{e.description}</p>}
+                      <div className="ch-event-meta">
+                        {d.time && <span>{d.time}</span>}
+                        {e.location && <span>{e.location}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-              <label className="ch-field">
-                <span>What brings you here?</span>
-                <textarea
-                  rows={3}
-                  value={form.bio}
-                  onChange={(e) => updateField("bio", e.target.value)}
-                  placeholder="Trader, builder, researcher — tell us in a line or two."
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="ch-btn ch-btn-primary ch-form-submit"
-                disabled={formStatus === "submitting"}
-              >
-                {formStatus === "submitting" ? "Submitting…" : "Request to join"}
-              </button>
-
-              {formStatus === "success" && (
-                <p className="ch-form-note ch-form-note-success">
-                  Request received — we'll be in touch shortly.
-                </p>
-              )}
-              {formStatus === "error" && (
-                <p className="ch-form-note ch-form-note-error">{formError}</p>
-              )}
-            </form>
+        {/* ---------------- Resources / CTA ---------------- */}
+        <section className="ch-section ch-cta-section">
+          <div className="ch-cta-inner">
+            <span className="ch-section-eyebrow">Get involved</span>
+            <h2 className="ch-section-title">Come say hello</h2>
+            <p className="ch-join-sub">
+              The fastest way in is Telegram — introduce yourself, tell us what you're
+              trading or building, and someone from the team will point you to the right
+              working group.
+            </p>
+            <a
+              className="ch-btn ch-btn-primary"
+              href="https://t.me"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open Telegram
+            </a>
+            <div className="ch-resource-list">
+              {RESOURCE_LINKS.map((r) => (
+                <a
+                  className="ch-resource-link"
+                  key={r.label}
+                  href={r.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ArrowIcon />
+                  <span>{r.label}</span>
+                </a>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -650,16 +613,101 @@ const STYLES = `
 }
 .ch-benefit-body { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0; }
 
-/* ---------------- Join section ---------------- */
-.ch-join-section { border-bottom: none; }
-.ch-join-grid {
+/* ---------------- Featured members ---------------- */
+.ch-members-grid {
   display: grid;
-  grid-template-columns: 1fr 1.15fr;
-  gap: clamp(32px, 6vw, 72px);
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
 }
-.ch-join-sub { font-size: 14px; line-height: 1.7; color: var(--nv-text-dim); margin: 16px 0 26px; max-width: 420px; }
-.ch-resource-list { display: flex; flex-direction: column; gap: 4px; }
+.ch-member-card {
+  border: 1px solid var(--nv-hairline);
+  border-radius: 10px;
+  padding: 22px 20px;
+  background: rgba(255, 255, 255, 0.012);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.ch-member-card:hover { border-color: var(--nv-signal); transform: translateY(-2px); }
+.ch-member-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nv-amber-dim);
+  color: var(--nv-amber);
+  border: 1px solid var(--nv-hairline);
+  font-family: var(--nv-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.ch-member-name {
+  font-family: var(--nv-font-display);
+  font-weight: 700;
+  font-size: 15px;
+  margin: 0 0 4px;
+  color: var(--nv-text);
+}
+.ch-member-role {
+  display: block;
+  font-family: var(--nv-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nv-signal);
+  margin-bottom: 2px;
+}
+.ch-member-city {
+  display: block;
+  font-size: 12px;
+  color: var(--nv-text-faint);
+  margin-bottom: 10px;
+}
+.ch-member-bio { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0; }
+
+/* ---------------- Events ---------------- */
+.ch-events-list { display: flex; flex-direction: column; gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
+.ch-event-row { display: flex; gap: 18px; padding: 20px 22px; background: var(--nv-panel); align-items: flex-start; }
+.ch-event-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: var(--nv-signal-dim);
+  border: 1px solid var(--nv-hairline);
+}
+.ch-event-day { font-family: var(--nv-font-display); font-weight: 700; font-size: 18px; color: var(--nv-text); line-height: 1.1; }
+.ch-event-month { font-family: var(--nv-font-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--nv-signal); }
+.ch-event-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 15.5px; margin: 0 0 6px; color: var(--nv-text); }
+.ch-event-desc { font-size: 13px; line-height: 1.6; color: var(--nv-text-dim); margin: 0 0 8px; }
+.ch-event-meta { display: flex; gap: 14px; font-family: var(--nv-font-mono); font-size: 11px; color: var(--nv-text-faint); }
+
+/* ---------------- Skeleton loading ---------------- */
+.ch-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--nv-panel);
+  min-height: 120px;
+  border: 1px solid var(--nv-hairline);
+}
+.ch-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+  animation: ch-shimmer 1.4s infinite;
+}
+@keyframes ch-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* ---------------- CTA / Resources ---------------- */
+.ch-cta-section { border-bottom: none; }
+.ch-cta-inner { max-width: 560px; }
+.ch-join-sub { font-size: 14px; line-height: 1.7; color: var(--nv-text-dim); margin: 16px 0 24px; max-width: 460px; }
+.ch-resource-list { display: flex; flex-direction: column; gap: 4px; margin-top: 28px; }
 .ch-resource-link {
   display: inline-flex;
   align-items: center;
@@ -674,42 +722,6 @@ const STYLES = `
 .ch-resource-link svg { color: var(--nv-text-faint); transition: transform 0.15s ease, color 0.15s ease; }
 .ch-resource-link:hover { color: var(--nv-signal); }
 .ch-resource-link:hover svg { color: var(--nv-signal); transform: translate(1px, -1px); }
-
-.ch-form {
-  border: 1px solid var(--nv-hairline);
-  border-radius: 12px;
-  padding: 28px;
-  background: rgba(255, 255, 255, 0.012);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.ch-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.ch-field { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--nv-text-dim); }
-.ch-field span { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--nv-text-faint); }
-.ch-field input,
-.ch-field textarea {
-  background: var(--nv-bg);
-  border: 1px solid var(--nv-hairline);
-  border-radius: 7px;
-  color: var(--nv-text);
-  padding: 11px 12px;
-  font-family: var(--nv-font-body);
-  font-size: 13.5px;
-  outline: none;
-  resize: vertical;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.ch-field input::placeholder,
-.ch-field textarea::placeholder { color: var(--nv-text-faint); }
-.ch-field input:focus,
-.ch-field textarea:focus { border-color: var(--nv-signal); box-shadow: 0 0 0 3px var(--nv-signal-dim); }
-
-.ch-form-submit { align-self: flex-start; margin-top: 4px; }
-.ch-form-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-.ch-form-note { font-size: 12.5px; margin: 0; font-family: var(--nv-font-mono); }
-.ch-form-note-success { color: var(--nv-signal); }
-.ch-form-note-error { color: var(--nv-danger); }
 
 /* ---------------- Footer ---------------- */
 .ch-footer {
@@ -726,16 +738,14 @@ const STYLES = `
 
 @media (prefers-reduced-motion: reduce) {
   .ch-live-dot { animation: none !important; opacity: 1 !important; }
+  .ch-skeleton::after { animation: none !important; }
 }
 
 /* ---------------- Responsive ---------------- */
-@media (max-width: 860px) {
-  .ch-join-grid { grid-template-columns: 1fr; }
-}
 @media (max-width: 560px) {
-  .ch-form-row { grid-template-columns: 1fr; }
   .ch-hero-actions { flex-direction: column; align-items: stretch; }
   .ch-stat-row { gap: 28px; }
+  .ch-event-row { flex-direction: column; }
   .ch-footer { flex-direction: column; gap: 6px; align-items: flex-start; }
 }
 `;
