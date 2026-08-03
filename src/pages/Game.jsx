@@ -18,6 +18,9 @@ import {
   Heart,
   ChevronRight,
   Users,
+  Crown,
+  Flame,
+  Medal,
 } from "lucide-react";
 
 /* ============================================================
@@ -1173,6 +1176,180 @@ function GameTheoryRow({ game, index }) {
 }
 
 /* ============================================================
+   LEADERBOARD — professional, single-tone "nova" styling.
+   ------------------------------------------------------------
+   Design notes (why it looks the way it does):
+   - No rainbow medal emoji (🥇🥈🥉). Rank is communicated with a
+     clean numeric badge; only rank #1 gets a subtle Crown glyph,
+     still rendered in the same signal teal — never a different
+     hue per rank. This keeps the whole panel monochrome/on-brand.
+   - Every row shows: rank, avatar, username, a small W/L record,
+     a relative XP progress bar (against the #1 score), and the
+     XP figure itself — the standard shape of a "real" leaderboard
+     rather than a bare name+number list.
+   - The current signed-in player's row (if present in the list)
+     is subtly highlighted so they can find themselves at a glance.
+   ============================================================ */
+function LeaderboardRow({ entry, rank, topXP, isSelf }) {
+  const xp = entry.totalXP ?? 0;
+  const pct = topXP > 0 ? clamp((xp / topXP) * 100, 4, 100) : 0;
+  const wins = entry.wins ?? 0;
+  const losses = entry.losses ?? 0;
+  const isTop = rank === 1;
+
+  return (
+    <div
+      className="grid grid-cols-[34px_1fr_auto] sm:grid-cols-[38px_1fr_90px_auto] items-center gap-3 sm:gap-4 rounded-xl px-3 sm:px-4 py-3 border transition-colors"
+      style={{
+        borderColor: isSelf ? "#47d6c455" : "#1d232b",
+        background: isSelf ? "rgba(71,214,196,0.06)" : "rgba(11,13,16,0.6)",
+      }}
+    >
+      {/* RANK */}
+      <div className="flex items-center justify-center">
+        {isTop ? (
+          <span
+            className="w-8 h-8 rounded-lg flex items-center justify-center border"
+            style={{ borderColor: "#47d6c455", background: "#47d6c41a" }}
+            title="Rank 1"
+          >
+            <Crown size={15} color="#47d6c4" strokeWidth={2} />
+          </span>
+        ) : (
+          <span
+            className="w-8 h-8 rounded-lg flex items-center justify-center border text-xs font-bold [font-family:'IBM_Plex_Mono',monospace]"
+            style={{ borderColor: "#1d232b", color: rank <= 3 ? "#47d6c4" : "#545c67" }}
+          >
+            {String(rank).padStart(2, "0")}
+          </span>
+        )}
+      </div>
+
+      {/* PLAYER */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <img
+          src={entry.avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=" + (entry.username || rank)}
+          alt=""
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border shrink-0"
+          style={{ borderColor: isSelf ? "#47d6c477" : "#1d232b" }}
+        />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate text-sm sm:text-[15px] font-semibold text-[#e7eaee] [font-family:'Space_Grotesk',sans-serif]">
+              {entry.username}
+            </span>
+            {isSelf && (
+              <span className="shrink-0 text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-full border border-[#47d6c455] text-[#47d6c4] [font-family:'IBM_Plex_Mono',monospace]">
+                You
+              </span>
+            )}
+          </div>
+          {/* progress bar relative to top score — desktop shows inline under name on small screens */}
+          <div className="hidden sm:block mt-1.5 w-40 h-1 rounded-full bg-[#1d232b] overflow-hidden">
+            <div className="h-full rounded-full bg-[#47d6c4]" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* RECORD (desktop only) */}
+      <div className="hidden sm:flex items-center justify-center gap-2 text-[11px] [font-family:'IBM_Plex_Mono',monospace]">
+        <span className="text-[#47d6c4]">{wins}W</span>
+        <span className="text-[#545c67]">/</span>
+        <span className="text-[#8992a1]">{losses}L</span>
+      </div>
+
+      {/* XP */}
+      <div className="flex flex-col items-end gap-0.5">
+        <span className="text-sm sm:text-base font-bold text-[#47d6c4] [font-family:'IBM_Plex_Mono',monospace]">
+          {xp.toLocaleString()}
+        </span>
+        <span className="text-[9px] uppercase tracking-widest text-[#545c67] [font-family:'IBM_Plex_Mono',monospace]">
+          XP
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardPanel({ leaderboard, currentUsername }) {
+  const topXP = leaderboard[0]?.totalXP ?? 0;
+  const totalPlayers = leaderboard.length;
+
+  return (
+    <div className="rounded-2xl border border-[#47d6c4]/20 bg-[#0d1013]/80 backdrop-blur p-4 sm:p-6 shadow-[0_0_40px_rgba(71,214,196,0.12)]">
+      {/* HEADER */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2.5">
+          <span className="w-9 h-9 rounded-xl border border-[#47d6c4]/40 bg-[#47d6c4]/10 flex items-center justify-center">
+            <Trophy size={16} color="#47d6c4" strokeWidth={1.8} />
+          </span>
+          <div>
+            <h3 className="text-sm sm:text-base font-bold tracking-[0.1em] text-[#e7eaee] uppercase [font-family:'Space_Grotesk',sans-serif]">
+              Arena Leaderboard
+            </h3>
+            <p className="text-[10px] text-[#545c67] [font-family:'IBM_Plex_Mono',monospace] tracking-wide">
+              Ranked by total XP · live
+            </p>
+          </div>
+        </div>
+        <LiveDot />
+      </div>
+
+      {/* SUMMARY STRIP */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 my-5">
+        <div className="rounded-xl border border-[#1d232b] bg-[#0b0d10]/70 px-3 py-2.5 flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-[0.15em] text-[#545c67] [font-family:'IBM_Plex_Mono',monospace] inline-flex items-center gap-1">
+            <Users size={10} /> Players
+          </span>
+          <span className="text-base font-bold text-[#e7eaee] [font-family:'Space_Grotesk',sans-serif]">{totalPlayers}</span>
+        </div>
+        <div className="rounded-xl border border-[#1d232b] bg-[#0b0d10]/70 px-3 py-2.5 flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-[0.15em] text-[#545c67] [font-family:'IBM_Plex_Mono',monospace] inline-flex items-center gap-1">
+            <Crown size={10} /> Top XP
+          </span>
+          <span className="text-base font-bold text-[#47d6c4] [font-family:'Space_Grotesk',sans-serif]">{topXP}</span>
+        </div>
+        <div className="rounded-xl border border-[#1d232b] bg-[#0b0d10]/70 px-3 py-2.5 flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-[0.15em] text-[#545c67] [font-family:'IBM_Plex_Mono',monospace] inline-flex items-center gap-1">
+            <Flame size={10} /> Cap / Run
+          </span>
+          <span className="text-base font-bold text-[#e7eaee] [font-family:'Space_Grotesk',sans-serif]">{XP_CAP}</span>
+        </div>
+      </div>
+
+      {/* COLUMN LABELS (desktop) */}
+      {totalPlayers > 0 && (
+        <div className="hidden sm:grid grid-cols-[38px_1fr_90px_auto] gap-4 px-4 mb-2 text-[9px] uppercase tracking-[0.15em] text-[#545c67] [font-family:'IBM_Plex_Mono',monospace]">
+          <span>Rank</span>
+          <span>Player</span>
+          <span className="text-center">Record</span>
+          <span className="text-right">XP</span>
+        </div>
+      )}
+
+      {/* ROWS */}
+      <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
+        {totalPlayers === 0 && (
+          <div className="flex flex-col items-center gap-2 py-10 text-center">
+            <Trophy size={22} color="#545c67" />
+            <p className="text-[#545c67] text-xs">No runs recorded yet. Be the first to set a score.</p>
+          </div>
+        )}
+        {leaderboard.map((entry, i) => (
+          <LeaderboardRow
+            key={entry._id || entry.user || i}
+            entry={entry}
+            rank={i + 1}
+            topXP={topXP}
+            isSelf={!!currentUsername && entry.username === currentUsername}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    MAIN COMPONENT
    ============================================================ */
 export default function Game() {
@@ -1445,9 +1622,12 @@ export default function Game() {
           </div>
         )}
 
-        {/* ============ PLAYABLE ARENA + LEADERBOARD ============ */}
-        <div ref={arenaSectionRef} className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 sm:gap-6 scroll-mt-6">
-          {/* MAIN PANEL */}
+        {/* ============ PLAYABLE ARENA (top) + LEADERBOARD (below) ============
+            Stacked vertically on purpose: the game card always sits above the
+            leaderboard, full width, so play comes first and ranking follows
+            right underneath it — instead of a side-by-side split. ============ */}
+        <div ref={arenaSectionRef} className="flex flex-col gap-6 sm:gap-8 scroll-mt-6">
+          {/* MAIN GAME PANEL */}
           <div className="rounded-2xl border border-[#47d6c4]/20 bg-[#0d1013]/80 backdrop-blur p-3 sm:p-4 md:p-6 shadow-[0_0_40px_rgba(71,214,196,0.15)]">
             {phase === "checking" && (
               <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
@@ -1476,7 +1656,7 @@ export default function Game() {
                 {!showGamesGrid ? (
                   <div className="flex flex-col items-center gap-5 text-center py-6">
                     <div className="w-16 h-16 rounded-2xl border-2 border-[#47d6c4]/50 flex items-center justify-center shadow-[0_0_25px_rgba(71,214,196,0.35)]">
-                      <span className="text-2xl">🕹️</span>
+                      <Gamepad2 size={26} color="#47d6c4" strokeWidth={1.8} />
                     </div>
                     <div>
                       <h3 className="text-lg font-bold [font-family:'Space_Grotesk',sans-serif] text-[#e7eaee] mb-2">
@@ -1558,7 +1738,7 @@ export default function Game() {
               <div className="relative">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">{activeGameMeta.icon}</span>
+                    <GameIcon id={activeGameMeta.id} size={20} color={activeGameMeta.accent} />
                     <h2 className="font-bold [font-family:'Space_Grotesk',sans-serif]" style={{ color: activeGameMeta.accent }}>
                       {activeGameMeta.title}
                     </h2>
@@ -1596,44 +1776,8 @@ export default function Game() {
             )}
           </div>
 
-          {/* LEADERBOARD */}
-          <div className="rounded-2xl border border-[#47d6c4]/20 bg-[#0d1013]/80 backdrop-blur p-4 sm:p-5 shadow-[0_0_40px_rgba(71,214,196,0.12)]">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold tracking-[0.15em] text-[#47d6c4] uppercase [font-family:'Space_Grotesk',sans-serif]">
-                Arena Leaderboard
-              </h3>
-              <LiveDot />
-            </div>
-            <div className="flex flex-col gap-2 max-h-[300px] lg:max-h-[500px] overflow-y-auto pr-1">
-              {leaderboard.length === 0 && <p className="text-[#545c67] text-xs">No runs recorded yet.</p>}
-              {leaderboard.map((entry, i) => {
-                const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
-                return (
-                  <div
-                    key={entry._id || entry.user || i}
-                    className="flex items-center justify-between bg-[#0b0d10]/60 border rounded-xl px-3 py-2.5 text-sm"
-                    style={{ borderColor: i < 3 ? "#47d6c455" : "#1d232b" }}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span
-                        className="font-bold w-6 text-right [font-family:'IBM_Plex_Mono',monospace]"
-                        style={{ color: "#47d6c4" }}
-                      >
-                        {medal || i + 1}
-                      </span>
-                      <img
-                        src={entry.avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=" + (entry.username || i)}
-                        alt=""
-                        className="w-6 h-6 rounded-full"
-                      />
-                      <span className="truncate">{entry.username}</span>
-                    </div>
-                    <span className="text-[#47d6c4] font-semibold shrink-0 [font-family:'IBM_Plex_Mono',monospace]">{entry.totalXP} XP</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* LEADERBOARD — sits directly below the game card, full width */}
+          <LeaderboardPanel leaderboard={leaderboard} currentUsername={profile?.username} />
         </div>
       </div>
     </div>
