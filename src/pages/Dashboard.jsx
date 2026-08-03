@@ -778,7 +778,14 @@ function PortfolioCalculator({ currentPrice }) {
   const investmentNum = parseFloat(investment) || 0;
   const buyPriceNum = parseFloat(buyPrice) || 0;
 
-  const injAmount = buyPriceNum > 0 ? investmentNum / buyPriceNum : 0;
+  // FIX: pehle jab "Bought at" field khaali hoti thi to buyPriceNum 0 ban jaata
+  // tha, is wajah se injAmount bhi 0 calculate hota tha aur profitUsd hamesha
+  // -investmentNum (yani -100% "loss") dikhata tha, chahe market mein profit
+  // hi kyun na ho. Ab khaali field par currentPrice ko hi buy price maan liya
+  // jaata hai, taake calculator neutral (0%) se shuru ho, real loss se nahi.
+  const effectiveBuyPrice = buyPriceNum > 0 ? buyPriceNum : currentPrice || 0;
+
+  const injAmount = effectiveBuyPrice > 0 ? investmentNum / effectiveBuyPrice : 0;
   const currentValue = currentPrice ? injAmount * currentPrice : null;
   const profitUsd = currentValue != null ? currentValue - investmentNum : null;
   const profitPct = investmentNum > 0 && profitUsd != null ? (profitUsd / investmentNum) * 100 : null;
