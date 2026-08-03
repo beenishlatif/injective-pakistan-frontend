@@ -15,11 +15,19 @@
  *     persisted on the backend, scoped to their own account.
  *   - Requires <AuthProvider> to be wrapping the app (see App.jsx).
  *
+ * Suggested prompts:
+ *   - Only shown on a brand-new account's very first chat (no saved
+ *     sessions yet), or on first load for a guest. Once the user
+ *     starts a chat, deletes it via "New chat", or already has chat
+ *     history, the suggestions no longer reappear.
+ *
  * Responsive:
- *   - Desktop: fixed sidebar + main panel side by side.
- *   - Tablet/mobile (<= 860px): sidebar becomes an off-canvas drawer,
+ *   - Desktop (>1024px): fixed sidebar + main panel side by side.
+ *   - Tablet (641px–1024px): sidebar becomes an off-canvas drawer,
  *     opened via a hamburger button in the top bar, with a tap-outside
- *     overlay to close it.
+ *     overlay to close it. Layout paddings tighten progressively.
+ *   - Mobile (<=640px): single-column, compact spacing, full-width
+ *     bubbles, stacked suggestion chips.
  * ------------------------------------------------------------------
  */
 
@@ -130,8 +138,13 @@ export default function AIAssistant({ useStreaming = true }) {
   const [isSessionOpening, setIsSessionOpening] = useState(false);
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile/tablet drawer
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+
+  // Suggested prompts only belong on a brand-new account's very first chat.
+  // Once the user starts chatting, or manually opens "New chat", or already
+  // has saved history, they should never reappear.
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -186,6 +199,9 @@ export default function AIAssistant({ useStreaming = true }) {
     setErrorMsg("");
     setActiveSessionId(null);
     setSidebarOpen(false);
+    // Suggestions are an onboarding moment for a first-ever chat only —
+    // a manually started "New chat" should never bring them back.
+    setShowSuggestions(false);
     if (textareaRef.current) textareaRef.current.focus();
   }
 
@@ -199,6 +215,7 @@ export default function AIAssistant({ useStreaming = true }) {
       const data = await safeParseJson(res, "Loading chat");
       setMessages(data.messages.map((m) => ({ ...m, id: nextId() })));
       setActiveSessionId(data.sessionId);
+      setShowSuggestions(false);
     } catch (err) {
       console.error(err.message);
       setErrorMsg("Couldn't load that chat. Please try again.");
@@ -228,6 +245,7 @@ export default function AIAssistant({ useStreaming = true }) {
     if (!text || isLoading) return;
 
     setErrorMsg("");
+    setShowSuggestions(false);
     const userMsg = { role: "user", content: text, id: nextId() };
     const cleanHistory = messages.filter((m) => m.content && m.content.trim());
     const history = [...cleanHistory, userMsg];
@@ -340,6 +358,14 @@ export default function AIAssistant({ useStreaming = true }) {
     ? sessions.find((s) => s.sessionId === activeSessionId)?.title || "Conversation"
     : "New conversation";
 
+  // A brand-new account (or a guest who hasn't touched the composer yet)
+  // is the only case that earns the onboarding suggestion chips.
+  const isBrandNewChat =
+    showSuggestions &&
+    messages.length === 0 &&
+    !isSessionOpening &&
+    (!isAuthenticated || (!isHistoryLoading && sessions.length === 0));
+
   return (
     <>
       <style>{STYLES}</style>
@@ -373,7 +399,7 @@ export default function AIAssistant({ useStreaming = true }) {
             <div className="nv-brand">
               <div className="nv-brand-mark">N</div>
               <div className="nv-brand-text">
-                <div className="nv-brand-title">NOVA</div>
+                <div className="nv-brand-title">NINJA</div>
                 <div className="nv-brand-sub">Injective Research Assistant</div>
               </div>
             </div>
@@ -493,7 +519,7 @@ export default function AIAssistant({ useStreaming = true }) {
               </div>
             )}
 
-            {messages.length === 0 && !isSessionOpening && (
+            {isBrandNewChat && (
               <div className="nv-empty">
                 <div className="nv-empty-mark">
                   <SparkIcon />
@@ -519,9 +545,19 @@ export default function AIAssistant({ useStreaming = true }) {
               </div>
             )}
 
+            {!isBrandNewChat && messages.length === 0 && !isSessionOpening && (
+              <div className="nv-empty nv-empty-plain">
+                <div className="nv-empty-mark">
+                  <SparkIcon />
+                </div>
+                <p className="nv-empty-title">Start a new conversation</p>
+                <p className="nv-empty-sub">Ask about INJ, staking, trading, or building on Injective.</p>
+              </div>
+            )}
+
             {messages.map((m) => (
               <div key={m.id} className={`nv-row nv-row-${m.role}`}>
-                {m.role === "assistant" && <div className="nv-row-label">Nova</div>}
+                {m.role === "assistant" && <div className="nv-row-label">Ninja</div>}
                 <div className={`nv-bubble nv-bubble-${m.role}`}>
                   {m.role === "assistant" && m.content === "" && isLoading ? (
                     <TypingIndicator />
@@ -534,7 +570,7 @@ export default function AIAssistant({ useStreaming = true }) {
 
             {isLoading && messages[messages.length - 1]?.role === "user" && (
               <div className="nv-row nv-row-assistant">
-                <div className="nv-row-label">Nova</div>
+                <div className="nv-row-label">Ninja</div>
                 <div className="nv-bubble nv-bubble-assistant">
                   <TypingIndicator />
                 </div>
@@ -706,6 +742,8 @@ const STYLES = `
 
 * { box-sizing: border-box; }
 
+html, body { overscroll-behavior: none; }
+
 .nv-page {
   display: flex;
   width: 100%;
@@ -722,6 +760,7 @@ const STYLES = `
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
   z-index: 30;
+  backdrop-filter: blur(1px);
 }
 
 /* ---------------- Logout confirmation ---------------- */
@@ -764,7 +803,7 @@ const STYLES = `
   display: flex;
   flex-direction: column;
   padding: 20px 14px;
-  gap: 18px;
+  gap: 16px;
 }
 
 .nv-sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -886,12 +925,12 @@ const STYLES = `
 
 .nv-topbar {
   display: flex; align-items: center; gap: 10px;
-  padding: 15px clamp(16px, 8vw, 160px) 13px;
+  padding: 15px clamp(16px, 6vw, 120px) 13px;
   border-bottom: 1px solid var(--nv-hairline); flex-shrink: 0;
 }
 .nv-hamburger { display: none; background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text); padding: 7px; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
 .nv-topbar-crumb { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); flex-shrink: 0; }
-.nv-topbar-title { font-family: var(--nv-font-body); font-size: 13px; font-weight: 600; color: var(--nv-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.nv-topbar-title { font-family: var(--nv-font-body); font-size: 13px; font-weight: 600; color: var(--nv-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .nv-topbar-signin {
   flex-shrink: 0; background: var(--nv-signal-dim); border: 1px solid var(--nv-signal); color: var(--nv-signal);
   font-family: var(--nv-font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
@@ -899,7 +938,7 @@ const STYLES = `
 }
 .nv-topbar-signin:hover { background: var(--nv-signal); color: #061412; }
 
-.nv-body { flex: 1; overflow-y: auto; padding: 26px clamp(16px, 8vw, 160px); display: flex; flex-direction: column; gap: 18px; }
+.nv-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 26px clamp(16px, 6vw, 120px); display: flex; flex-direction: column; gap: 18px; }
 
 .nv-guest-banner {
   max-width: 740px; width: 100%; margin: 0 auto;
@@ -913,7 +952,8 @@ const STYLES = `
 }
 
 /* ---------------- Empty state / suggestions ---------------- */
-.nv-empty { max-width: 640px; margin: 6vh auto 0; text-align: left; }
+.nv-empty { max-width: 640px; width: 100%; margin: 6vh auto 0; text-align: left; }
+.nv-empty-plain { margin-top: 10vh; }
 .nv-empty-mark {
   width: 42px; height: 42px; border-radius: 10px;
   border: 1px solid var(--nv-hairline); background: var(--nv-signal-dim); color: var(--nv-signal);
@@ -921,6 +961,7 @@ const STYLES = `
 }
 .nv-empty-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 23px; letter-spacing: -0.01em; color: var(--nv-text); margin: 0 0 8px; }
 .nv-empty-sub { font-family: var(--nv-font-body); color: var(--nv-text-dim); font-size: 14px; margin: 0 0 26px; line-height: 1.65; max-width: 460px; }
+.nv-empty-plain .nv-empty-sub { margin-bottom: 0; }
 
 .nv-chips-label {
   font-family: var(--nv-font-mono); font-size: 10.5px; font-weight: 500;
@@ -950,13 +991,14 @@ const STYLES = `
 .nv-chip:hover .nv-chip-text { color: var(--nv-text); }
 .nv-chip:hover .nv-chip-arrow { opacity: 1; transform: translateX(0); color: var(--nv-signal); }
 .nv-chip:focus-visible { outline: 2px solid var(--nv-signal); outline-offset: 2px; }
+.nv-chip:active { transform: translateY(0) scale(0.99); }
 
 .nv-row { display: flex; flex-direction: column; max-width: 740px; width: 100%; margin: 0 auto; }
 .nv-row-user { align-items: flex-end; }
 .nv-row-assistant { align-items: flex-start; }
 .nv-row-label { font-family: var(--nv-font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nv-text-faint); margin: 0 0 7px 13px; }
 
-.nv-bubble { font-size: 14px; line-height: 1.7; color: var(--nv-text); word-wrap: break-word; }
+.nv-bubble { font-size: 14px; line-height: 1.7; color: var(--nv-text); word-wrap: break-word; overflow-wrap: anywhere; }
 .nv-bubble p { margin: 0 0 5px; }
 .nv-bubble p:last-child { margin-bottom: 0; }
 .nv-bubble-user { max-width: 78%; background: var(--nv-amber-dim); border: 1px solid var(--nv-hairline); border-right: 2px solid var(--nv-amber); border-radius: 8px 3px 8px 8px; padding: 11px 14px; }
@@ -977,7 +1019,7 @@ const STYLES = `
 
 .nv-input-bar {
   display: flex; align-items: flex-end; gap: 10px;
-  padding: 14px clamp(16px, 8vw, 160px) max(22px, env(safe-area-inset-bottom));
+  padding: 14px clamp(16px, 6vw, 120px) max(18px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--nv-hairline); background: rgba(255, 255, 255, 0.012); flex-shrink: 0;
 }
 .nv-textarea {
@@ -1007,41 +1049,69 @@ const STYLES = `
 
 /* ---------------- Responsive breakpoints ---------------- */
 
-@media (max-width: 960px) {
-  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 24px; padding-right: 24px; }
-  .nv-sidebar { width: 240px; }
+/* Small laptops / narrow desktop */
+@media (max-width: 1180px) {
+  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 32px; padding-right: 32px; }
+  .nv-sidebar { width: 248px; }
 }
 
+/* Tablet landscape */
+@media (max-width: 1024px) {
+  .nv-sidebar { width: 226px; padding: 18px 12px; }
+  .nv-brand-sub { display: none; }
+  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 24px; padding-right: 24px; }
+}
+
+/* Tablet portrait and below: sidebar becomes an off-canvas drawer */
 @media (max-width: 860px) {
   .nv-sidebar {
     position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
-    width: min(82vw, 300px);
+    width: min(80vw, 300px);
     transform: translateX(-100%);
     transition: transform 0.22s ease;
     box-shadow: 8px 0 24px rgba(0,0,0,0.4);
-    padding-top: max(20px, env(safe-area-inset-top));
+    padding: max(20px, env(safe-area-inset-top)) 16px 16px;
   }
   .nv-sidebar-open { transform: translateX(0); }
   .nv-sidebar-close { display: block; }
   .nv-backdrop { display: block; }
   .nv-hamburger { display: flex; align-items: center; justify-content: center; }
   .nv-topbar-crumb { display: none; }
+  .nv-brand-sub { display: block; }
+  .nv-empty { margin-top: 5vh; }
+  .nv-chips { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .nv-chip { padding: 12px; gap: 10px; }
+}
+
+/* Small tablet / large phone landscape */
+@media (max-width: 700px) {
+  .nv-body, .nv-input-bar, .nv-topbar { padding-left: 18px; padding-right: 18px; }
+  .nv-chips { grid-template-columns: 1fr; }
+  .nv-bubble-user { max-width: 85%; }
 }
 
 @media (max-width: 640px) {
   .nv-body, .nv-input-bar, .nv-topbar { padding-left: 14px; padding-right: 14px; }
-  .nv-topbar { padding-top: max(12px, env(safe-area-inset-top)); }
+  .nv-topbar { padding-top: max(12px, env(safe-area-inset-top)); gap: 8px; }
+  .nv-topbar-title { font-size: 12.5px; }
   .nv-empty { margin-top: 4vh; }
-  .nv-empty-title { font-size: 19px; }
-  .nv-empty-sub { font-size: 13px; }
+  .nv-empty-plain { margin-top: 8vh; }
+  .nv-empty-mark { width: 38px; height: 38px; margin-bottom: 14px; }
+  .nv-empty-title { font-size: 18px; }
+  .nv-empty-sub { font-size: 13px; margin-bottom: 20px; }
   .nv-chips { grid-template-columns: 1fr; }
   .nv-bubble-user { max-width: 88%; }
   .nv-bubble, .nv-chip { font-size: 13.5px; }
   .nv-topbar-signin { padding: 6px 9px; font-size: 10px; }
+  .nv-row-label { margin-left: 10px; }
+  .nv-input-bar { gap: 8px; }
 }
 
 @media (max-width: 400px) {
   .nv-send-btn { width: 38px; height: 38px; }
   .nv-textarea { font-size: 13.5px; padding: 10px 12px; }
+  .nv-chip { padding: 11px; }
+  .nv-chip-icon { width: 26px; height: 26px; }
+  .nv-empty-mark { width: 34px; height: 34px; }
 }
 `;
