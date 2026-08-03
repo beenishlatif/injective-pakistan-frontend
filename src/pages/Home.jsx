@@ -248,7 +248,6 @@ export default function Home({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
     { label: "INJ", value: statsLoading ? "…" : formatUsd(stats.injPriceUsd) },
     { label: "24H", value: statsLoading ? "…" : formatChange(stats.injPriceChange24h) || "—" },
     { label: "STAKED", value: statsLoading ? "…" : formatInj(stats.totalStakedInj) },
-    { label: "BURNED", value: statsLoading ? "…" : formatInj(stats.totalBurnedInj) },
     { label: "HELIX VOL", value: statsLoading ? "…" : formatUsd(stats.helixVolume24hUsd) },
   ];
 
