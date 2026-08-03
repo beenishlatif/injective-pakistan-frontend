@@ -323,7 +323,7 @@ export default function Home({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
             )}
           </div>
 
-          {/* 4 columns on desktop -> 2 on tablet -> 1 on small phones,
+          {/* 3 columns on desktop -> 2 on tablet -> 1 on small phones,
               see .hp-stats-grid breakpoints in STYLES below. */}
           <div className="hp-stats-grid">
             <StatCard
@@ -337,12 +337,6 @@ export default function Home({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
               label="Total Staked"
               value={statsLoading ? null : formatInj(stats.totalStakedInj)}
               sub="Securing the network"
-              loading={statsLoading}
-            />
-            <StatCard
-              label="Total Burned"
-              value={statsLoading ? null : formatInj(stats.totalBurnedInj)}
-              sub="Weekly auction burns"
               loading={statsLoading}
             />
             <StatCard
@@ -704,8 +698,8 @@ const STYLES = `
   padding: 6px 10px; border-radius: 6px; cursor: pointer;
 }
 
-/* Stats grid: 4 cols desktop -> 2 cols tablet (860px) -> 1 col phones (520px) */
-.hp-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
+/* Stats grid: 3 cols desktop -> 2 cols tablet (860px) -> 1 col phones (520px) */
+.hp-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
 .hp-stat-card { background: var(--nv-panel); padding: clamp(16px, 3vw, 22px) clamp(14px, 3vw, 20px); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hp-stat-label { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); }
 .hp-stat-value { font-family: var(--nv-font-display); font-weight: 700; font-size: clamp(19px, 2.4vw, 24px); color: var(--nv-text); }
