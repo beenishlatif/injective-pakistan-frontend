@@ -28,10 +28,10 @@ import { useAuth } from "../context/AuthContext.jsx";
 import AuthModal from "../components/AuthModal.jsx";
 
 const SUGGESTED_PROMPTS = [
-  "What is Injective in simple terms?",
-  "What is INJ used for?",
-  "How does Injective's on-chain order book work?",
-  "How do I start staking INJ?",
+  { text: "What is Injective in simple terms?", icon: "compass" },
+  { text: "What is INJ used for?", icon: "coin" },
+  { text: "How does Injective's on-chain order book work?", icon: "book" },
+  { text: "How do I start staking INJ?", icon: "stack" },
 ];
 
 // ---- Tiny markdown-lite renderer (bold + bullet lists + line breaks) ----
@@ -495,15 +495,24 @@ export default function AIAssistant({ useStreaming = true }) {
 
             {messages.length === 0 && !isSessionOpening && (
               <div className="nv-empty">
+                <div className="nv-empty-mark">
+                  <SparkIcon />
+                </div>
                 <p className="nv-empty-title">Ask me anything about Injective</p>
                 <p className="nv-empty-sub">
                   INJ token, staking, the on-chain order book, building dApps — I've got it.
                 </p>
+                <div className="nv-chips-label">Suggested</div>
                 <div className="nv-chips">
                   {SUGGESTED_PROMPTS.map((p) => (
-                    <button key={p} className="nv-chip" onClick={() => sendMessage(p)}>
-                      <ChevronIcon />
-                      <span>{p}</span>
+                    <button key={p.text} className="nv-chip" onClick={() => sendMessage(p.text)}>
+                      <span className="nv-chip-icon">
+                        <SuggestionIcon name={p.icon} />
+                      </span>
+                      <span className="nv-chip-text">{p.text}</span>
+                      <span className="nv-chip-arrow">
+                        <ChevronIcon />
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -612,6 +621,63 @@ function LogoutIcon() {
       <path d="M21 12H9" strokeLinecap="round" />
     </svg>
   );
+}
+function SparkIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path
+        d="M12 3L13.6 9.4L20 11L13.6 12.6L12 19L10.4 12.6L4 11L10.4 9.4L12 3Z"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+function CompassIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15 9L13 13L9 15L11 11L15 9Z" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CoinIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5V16.5M9.5 9.5C9.5 8.4 10.6 7.5 12 7.5C13.4 7.5 14.5 8.35 14.5 9.4C14.5 11.4 9.5 11 9.5 13.2C9.5 14.3 10.6 15 12 15C13.4 15 14.5 14.15 14.5 13" strokeLinecap="round" />
+    </svg>
+  );
+}
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 5.5C4 4.7 4.7 4 5.5 4H12V20H5.5C4.7 20 4 19.3 4 18.5V5.5Z" strokeLinejoin="round" />
+      <path d="M20 5.5C20 4.7 19.3 4 18.5 4H12V20H18.5C19.3 20 20 19.3 20 18.5V5.5Z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function StackIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M12 3L21 8L12 13L3 8L12 3Z" strokeLinejoin="round" />
+      <path d="M3 12L12 17L21 12" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M3 16L12 21L21 16" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+function SuggestionIcon({ name }) {
+  switch (name) {
+    case "coin":
+      return <CoinIcon />;
+    case "book":
+      return <BookIcon />;
+    case "stack":
+      return <StackIcon />;
+    case "compass":
+    default:
+      return <CompassIcon />;
+  }
 }
 
 // ---------------- Self-contained styles ----------------
@@ -846,19 +912,43 @@ const STYLES = `
   cursor: pointer; font-size: 12.5px; padding: 0; font-family: inherit;
 }
 
-.nv-empty { max-width: 560px; margin: 7vh auto 0; text-align: left; }
-.nv-empty-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.01em; color: var(--nv-text); margin: 0 0 8px; }
-.nv-empty-sub { font-family: var(--nv-font-body); color: var(--nv-text-dim); font-size: 14px; margin: 0 0 22px; line-height: 1.65; }
-.nv-chips { display: flex; flex-direction: column; gap: 8px; }
-.nv-chip {
-  display: flex; align-items: center; gap: 9px; text-align: left;
-  background: transparent; border: 1px solid var(--nv-hairline); color: var(--nv-text);
-  padding: 12px 14px; border-radius: 8px; font-family: var(--nv-font-body); font-size: 13.5px; cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+/* ---------------- Empty state / suggestions ---------------- */
+.nv-empty { max-width: 640px; margin: 6vh auto 0; text-align: left; }
+.nv-empty-mark {
+  width: 42px; height: 42px; border-radius: 10px;
+  border: 1px solid var(--nv-hairline); background: var(--nv-signal-dim); color: var(--nv-signal);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
 }
-.nv-chip svg { flex-shrink: 0; color: var(--nv-text-faint); transition: transform 0.15s ease, color 0.15s ease; }
-.nv-chip:hover { border-color: var(--nv-signal); background: var(--nv-signal-dim); }
-.nv-chip:hover svg { transform: translateX(2px); color: var(--nv-signal); }
+.nv-empty-title { font-family: var(--nv-font-display); font-weight: 700; font-size: 23px; letter-spacing: -0.01em; color: var(--nv-text); margin: 0 0 8px; }
+.nv-empty-sub { font-family: var(--nv-font-body); color: var(--nv-text-dim); font-size: 14px; margin: 0 0 26px; line-height: 1.65; max-width: 460px; }
+
+.nv-chips-label {
+  font-family: var(--nv-font-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--nv-text-faint);
+  margin-bottom: 10px;
+}
+.nv-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.nv-chip {
+  display: flex; align-items: flex-start; gap: 12px; text-align: left;
+  background: rgba(255, 255, 255, 0.015); border: 1px solid var(--nv-hairline); color: var(--nv-text);
+  padding: 14px; border-radius: 10px; font-family: var(--nv-font-body); font-size: 13.5px; cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.nv-chip-icon {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 7px;
+  background: var(--nv-signal-dim); border: 1px solid var(--nv-hairline); color: var(--nv-signal);
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.nv-chip-text { flex: 1; line-height: 1.5; padding-top: 4px; color: var(--nv-text-dim); }
+.nv-chip-arrow {
+  flex-shrink: 0; color: var(--nv-text-faint); margin-top: 8px; opacity: 0;
+  transform: translateX(-3px); transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+.nv-chip:hover { border-color: var(--nv-signal); background: var(--nv-signal-dim); transform: translateY(-1px); }
+.nv-chip:hover .nv-chip-icon { border-color: var(--nv-signal); background: rgba(71, 214, 196, 0.18); }
+.nv-chip:hover .nv-chip-text { color: var(--nv-text); }
+.nv-chip:hover .nv-chip-arrow { opacity: 1; transform: translateX(0); color: var(--nv-signal); }
 .nv-chip:focus-visible { outline: 2px solid var(--nv-signal); outline-offset: 2px; }
 
 .nv-row { display: flex; flex-direction: column; max-width: 740px; width: 100%; margin: 0 auto; }
@@ -944,6 +1034,7 @@ const STYLES = `
   .nv-empty { margin-top: 4vh; }
   .nv-empty-title { font-size: 19px; }
   .nv-empty-sub { font-size: 13px; }
+  .nv-chips { grid-template-columns: 1fr; }
   .nv-bubble-user { max-width: 88%; }
   .nv-bubble, .nv-chip { font-size: 13.5px; }
   .nv-topbar-signin { padding: 6px 9px; font-size: 10px; }
