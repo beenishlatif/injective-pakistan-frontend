@@ -64,11 +64,27 @@ export default function App() {
               <Link to="/" className="gnav-brand">
                 <span className="gnav-mark">
                   <span className="gnav-mark-ring" aria-hidden="true" />
-                  <span className="gnav-mark-inner">N</span>
+                  <span className="gnav-mark-inner">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M12 2c1.7 1.4 2.6 3.1 2.6 5.1 0 .5-.1 1-.2 1.5.9.2 1.7.6 2.4 1.2 1.6 1.4 2.4 3.5 2.1 5.7-.1.5-.5.7-.9.5-1.4-.7-2.6-.9-3.6-.6.7.9 1.1 2 1.1 3.2 0 .4-.4.7-.8.5-1.7-.8-3.1-.8-4.2-.1a.6.6 0 0 1-.9-.5c-.1-1.1.3-2.1.9-2.9-1.1-.2-2.3 0-3.7.7-.4.2-.9-.1-.9-.6-.2-2.1.6-4.1 2.1-5.5.7-.6 1.5-1 2.4-1.2-.1-.5-.2-1-.2-1.5C7.4 5.1 8.3 3.4 10 2c.6.5 1 1.1 1.3 1.8L12 2z"
+                        fill="currentColor"
+                      />
+                      <circle cx="9.3" cy="10.6" r="0.9" fill="#061412" />
+                      <circle cx="14.7" cy="10.6" r="0.9" fill="#061412" />
+                    </svg>
+                  </span>
                 </span>
                 <span className="gnav-brand-text">
-                  <span className="gnav-title">INJECTIVE PK</span>
-                  <span className="gnav-sub">Community Hub</span>
+                  <span className="gnav-title">Ninja Hub</span>
+                  <span className="gnav-sub">by Pakistani Ninja</span>
                 </span>
               </Link>
 
