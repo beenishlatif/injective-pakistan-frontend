@@ -18,7 +18,7 @@ const navLinks = [
   { to: "/", label: "Overview" },
   { to: "/ecosystem", label: "Explore" },
   { to: "/dashboard", label: "Live" },
-  { to: "/ai-assistant", label: "Ask Nova" },
+  { to: "/ai-assistant", label: "Ask Ninja" },
   { to: "/academy", label: "Academy" },
   { to: "/game", label: "Play" },
 ];
