@@ -162,7 +162,6 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
   const [summary, setSummary] = useState(null);
   const [fearGreed, setFearGreed] = useState(null);
   const [networkStatus, setNetworkStatus] = useState(null);
-  const [validators, setValidators] = useState(null);
   const [governance, setGovernance] = useState(null);
   const [ecosystem, setEcosystem] = useState(null);
 
@@ -254,13 +253,6 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
       if (data.success) setNetworkStatus(data.status);
     } catch (err) {
       console.error("Failed to load network status:", err);
-    }
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/dashboard/validators`);
-      const data = await res.json();
-      if (data.success) setValidators(data.validators);
-    } catch (err) {
-      console.error("Failed to load validators:", err);
     }
     try {
       const res = await fetch(`${apiBaseUrl}/api/dashboard/governance`);
@@ -634,7 +626,7 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
         {/* ================= NETWORK TAB ================= */}
         {activeTab === "network" && (
           <section className="db-section">
-            <div className="db-stats-grid db-stats-grid-3">
+            <div className="db-stats-grid db-stats-grid-2">
               <div className="db-panel-card">
                 <span className="db-section-eyebrow">LIVE NETWORK STATUS</span>
                 {networkStatus ? (
@@ -658,28 +650,6 @@ export default function Dashboard({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
                     <div className="db-kv-row">
                       <span>Block Time</span>
                       <span>{networkStatus.blockTimeSeconds != null ? `${networkStatus.blockTimeSeconds}s` : "—"}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <span className="db-skeleton" />
-                )}
-              </div>
-
-              <div className="db-panel-card">
-                <span className="db-section-eyebrow">VALIDATORS</span>
-                {validators ? (
-                  <div className="db-kv-list">
-                    <div className="db-kv-row">
-                      <span>Total</span>
-                      <span>{validators.total ?? "—"}</span>
-                    </div>
-                    <div className="db-kv-row">
-                      <span>Active</span>
-                      <span className="db-up">{validators.active ?? "—"}</span>
-                    </div>
-                    <div className="db-kv-row">
-                      <span>Jailed</span>
-                      <span className={validators.jailed ? "db-down" : ""}>{validators.jailed ?? "—"}</span>
                     </div>
                   </div>
                 ) : (
@@ -1191,6 +1161,7 @@ const STYLES = `
 
 .db-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--nv-hairline); border: 1px solid var(--nv-hairline); border-radius: 10px; overflow: hidden; }
 .db-stats-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.db-stats-grid-2 { grid-template-columns: repeat(2, 1fr); }
 .db-stat-card { background: var(--nv-panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .db-stat-label { font-family: var(--nv-font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--nv-text-faint); }
 .db-stat-value { font-family: var(--nv-font-display); font-weight: 700; font-size: clamp(15px, 1.8vw, 19px); }
