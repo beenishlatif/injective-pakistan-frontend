@@ -380,6 +380,7 @@ const NAV_STYLES = `
   font-size: 9px;
   color: var(--nv-text-faint);
   white-space: nowrap;
+  margin-top: 3px;
 }
 
 .gnav-links {
