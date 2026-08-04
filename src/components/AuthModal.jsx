@@ -49,6 +49,26 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Decodes a Google ID token (JWT) client-side just to read the
+// email/name/picture for the confirmation step below. This does NOT
+// verify the token — verification still happens server-side when
+// loginWithGoogle() sends the raw credential to your backend.
+function decodeGoogleCredential(token) {
+  try {
+    const payload = token.split(".")[1];
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 function looksLikeAccountNotFound(message) {
   if (!message) return false;
   const s = message.toLowerCase();
@@ -83,6 +103,8 @@ export default function AuthModal({ open, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isXLoading, setIsXLoading] = useState(false);
+  const [pendingGoogle, setPendingGoogle] = useState(null); // { credential, profile } awaiting confirmation
+  const [successMessage, setSuccessMessage] = useState("");
   const googleBtnRef = useRef(null);
   const firstInputRef = useRef(null);
 
@@ -96,6 +118,8 @@ export default function AuthModal({ open, onClose }) {
       setPassword("");
       setConfirmPassword("");
       setShowPassword(false);
+      setPendingGoogle(null);
+      setSuccessMessage("");
       setTimeout(() => firstInputRef.current?.focus(), 50);
     }
   }, [open, mode]);
@@ -155,17 +179,42 @@ export default function AuthModal({ open, onClose }) {
     }
   }
 
-  async function handleGoogleCredential(response) {
+  // Step 1: Google returns a credential the moment the person picks an
+  // account — we don't call the backend yet. We just decode it locally
+  // to show a confirmation card ("Continue as name@email.com?") so the
+  // person explicitly confirms whether they're signing in or signing up
+  // before anything actually happens.
+  function handleGoogleCredential(response) {
+    clearError();
+    const profile = decodeGoogleCredential(response.credential);
+    setPendingGoogle({ credential: response.credential, profile });
+  }
+
+  // Step 2: only fires once the person confirms. We pass the current
+  // mode ("login" or "register") through to loginWithGoogle so the
+  // backend can enforce the right rule — sign-in only succeeds for an
+  // account that already exists, sign-up only succeeds for one that
+  // doesn't. (Requires the backend Google route to honor this second
+  // argument / an equivalent flag — see file header note.)
+  async function confirmGoogleContinue() {
+    if (!pendingGoogle) return;
     clearError();
     setIsGoogleLoading(true);
     try {
-      await loginWithGoogle(response.credential);
-      onClose();
+      await loginWithGoogle(pendingGoogle.credential, mode);
+      setPendingGoogle(null);
+      setSuccessMessage(mode === "login" ? "Signed in successfully!" : "Account created successfully!");
+      setTimeout(() => onClose(), 850);
     } catch (err) {
+      setPendingGoogle(null);
       applyServerError(err.message);
     } finally {
       setIsGoogleLoading(false);
     }
+  }
+
+  function cancelGoogleContinue() {
+    setPendingGoogle(null);
   }
 
   async function handleXClick() {
@@ -247,6 +296,73 @@ export default function AuthModal({ open, onClose }) {
           ×
         </button>
 
+        {successMessage ? (
+          <div className="nv-auth-success">
+            <span className="nv-auth-success-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </span>
+            <div className="nv-auth-success-text">{successMessage}</div>
+          </div>
+        ) : pendingGoogle ? (
+          <div className="nv-auth-google-confirm">
+            <span className="nv-auth-eyebrow">
+              <span className="nv-auth-dot" />
+              {mode === "login" ? "Confirm sign in" : "Confirm sign up"}
+            </span>
+            <div className="nv-auth-google-confirm-card">
+              {pendingGoogle.profile?.picture ? (
+                <img className="nv-auth-google-confirm-avatar" src={pendingGoogle.profile.picture} alt="" />
+              ) : (
+                <div className="nv-auth-google-confirm-avatar nv-auth-google-confirm-avatar-fallback">
+                  {(pendingGoogle.profile?.name || pendingGoogle.profile?.email || "?").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="nv-auth-google-confirm-name">{pendingGoogle.profile?.name || "Google account"}</div>
+              <div className="nv-auth-google-confirm-email">{pendingGoogle.profile?.email}</div>
+            </div>
+            <div className="nv-auth-google-confirm-copy">
+              {mode === "login"
+                ? "We'll sign you in with this Google account. This only works if an account already exists for this email."
+                : "We'll create a new account with this Google account. This only works if no account already exists for this email."}
+            </div>
+
+            {error && (
+              <div className={`nv-auth-banner ${errorKind === "generic" || !errorKind ? "nv-auth-banner-error" : "nv-auth-banner-info"}`}>
+                <span className="nv-auth-banner-text">{error}</span>
+                {errorKind === "not-found" && (
+                  <button type="button" className="nv-auth-banner-action" onClick={() => switchMode("register")}>
+                    Create account instead
+                  </button>
+                )}
+                {errorKind === "already-exists" && (
+                  <button type="button" className="nv-auth-banner-action" onClick={() => switchMode("login")}>
+                    Sign in instead
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="nv-auth-google-confirm-actions">
+              <button type="button" className="nv-auth-google-cancel" onClick={cancelGoogleContinue} disabled={isGoogleLoading}>
+                Cancel
+              </button>
+              <button type="button" className="nv-auth-submit" onClick={confirmGoogleContinue} disabled={isGoogleLoading}>
+                {isGoogleLoading ? (
+                  <>
+                    <span className="nv-spinner nv-spinner-dark" /> Please wait…
+                  </>
+                ) : mode === "login" ? (
+                  "Continue signing in"
+                ) : (
+                  "Continue creating account"
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         <div className="nv-auth-header">
           <span className="nv-auth-eyebrow">
             <span className="nv-auth-dot" />
