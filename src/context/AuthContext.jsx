@@ -9,6 +9,42 @@
  *   <AuthProvider>
  *     <App />
  *   </AuthProvider>
+ *
+ * ------------------------------------------------------------------
+ * FIX (this revision) — Google / X "continue" ignored sign-in vs
+ * sign-up intent:
+ * ------------------------------------------------------------------
+ * Previously `loginWithGoogle(idToken)` only ever sent `{ idToken }`
+ * to `/api/auth/google`, and `loginWithX()` opened the popup with no
+ * indication of intent either. With no signal from the frontend, the
+ * backend's Google/X handlers had no choice but to "find or create" —
+ * so clicking "Continue with Google" logged a user in whether their
+ * account already existed or not, even from the "Sign in" screen.
+ *
+ * Both functions now accept a `mode` argument ("login" | "register",
+ * matching AuthModal's internal mode) and forward it to the backend:
+ *   - loginWithGoogle(idToken, mode) -> POST body now includes
+ *     `intent: mode`.
+ *   - loginWithX(mode) -> the popup URL now includes `?intent=mode`
+ *     as a query param, since popups can't send a JSON body.
+ *
+ * IMPORTANT — this file can only pass the intent along; it can't
+ * enforce it. Your BACKEND's /api/auth/google and /api/auth/x/login
+ * routes must read that `intent` value and actually act on it:
+ *   - intent === "login": look up the account by email/Google-id/
+ *     X-id first. If no account exists, respond with an error (4xx)
+ *     whose message matches the "no account found" wording your
+ *     email/password login already uses (e.g. "No account found
+ *     with this email.") INSTEAD of creating one.
+ *   - intent === "register": if an account already exists for that
+ *     email/Google-id/X-id, respond with an error whose message
+ *     matches your "already exists" wording (e.g. "An account with
+ *     this email already exists.") INSTEAD of just logging them in.
+ * AuthModal.jsx already knows how to turn those specific error
+ * messages into a friendly "Create account instead" / "Sign in
+ * instead" banner — it just needs the backend to actually send them.
+ * Share your backend auth routes/controller and I can wire that part
+ * up too.
  * ------------------------------------------------------------------
  */
 
@@ -110,11 +146,16 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
     return data.user;
   }
 
-  async function loginWithGoogle(idToken) {
+  // `mode` ("login" | "register") tells the backend whether this
+  // Google click must match an EXISTING account (sign-in) or must NOT
+  // already have one (sign-up). Defaults to "login" so any existing
+  // caller that doesn't pass it keeps today's sign-in behavior rather
+  // than silently switching to sign-up.
+  async function loginWithGoogle(idToken, mode = "login") {
     const res = await fetch(`${apiBaseUrl}/api/auth/google`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ idToken, intent: mode }),
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || "Google sign-in failed.");
@@ -125,7 +166,10 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
 
   // Opens the X OAuth popup and resolves/rejects once the popup
   // posts back a result (see auth.routes.js popupResponseHtml).
-  function loginWithX() {
+  // `mode` is forwarded as a query param (popups can't carry a JSON
+  // body) so the backend route can enforce the same sign-in-must-
+  // exist / sign-up-must-not-exist rule as loginWithGoogle above.
+  function loginWithX(mode = "login") {
     return new Promise((resolve, reject) => {
       const width = 500;
       const height = 650;
@@ -133,7 +177,7 @@ export function AuthProvider({ children, apiBaseUrl = DEFAULT_API_BASE_URL }) {
       const top = window.screenY + (window.outerHeight - height) / 2;
 
       const popup = window.open(
-        `${apiBaseUrl}/api/auth/x/login`,
+        `${apiBaseUrl}/api/auth/x/login?intent=${encodeURIComponent(mode)}`,
         "x-oauth-popup",
         `width=${width},height=${height},left=${left},top=${top}`
       );
