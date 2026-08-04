@@ -115,7 +115,7 @@ export default function App() {
                   className={`gnav-cta ${communityActive ? "gnav-cta-active" : ""}`}
                 >
                   <span className="gnav-cta-dot" />
-                  {communityLink.label}
+                  <span className="gnav-cta-label">{communityLink.label}</span>
                   <svg
                     className="gnav-cta-arrow"
                     width="13"
@@ -323,6 +323,7 @@ const NAV_STYLES = `
   text-decoration: none;
   margin-right: auto;
   padding-left: 2px;
+  min-width: 0;
   transition: transform 0.18s ease;
 }
 .gnav-brand:hover { transform: translateY(-1px); }
@@ -366,7 +367,12 @@ const NAV_STYLES = `
   font-weight: 700;
   font-size: 13px;
 }
-.gnav-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.gnav-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  min-width: 0;
+}
 .gnav-title {
   font-family: var(--nv-font-display);
   font-weight: 700;
@@ -381,6 +387,9 @@ const NAV_STYLES = `
   color: var(--nv-text-faint);
   white-space: nowrap;
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .gnav-links {
@@ -463,7 +472,7 @@ const NAV_STYLES = `
   box-shadow:
     0 4px 18px rgba(71, 214, 196, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, padding 0.18s ease;
 }
 .gnav-cta-dot {
   width: 6px;
@@ -472,9 +481,14 @@ const NAV_STYLES = `
   background: #061412;
   opacity: 0.7;
   animation: gnav-pulse 1.8s infinite;
+  flex-shrink: 0;
+}
+.gnav-cta-label {
+  white-space: nowrap;
 }
 .gnav-cta-arrow {
   transition: transform 0.18s ease;
+  flex-shrink: 0;
 }
 .gnav-cta:hover .gnav-cta-arrow { transform: translate(2px, -2px); }
 .gnav-cta:hover {
@@ -578,23 +592,42 @@ const NAV_STYLES = `
 
 /* ---------------- Responsive breakpoints ---------------- */
 
-/* Tablet: hide the inline links row, switch to hamburger + dropdown */
+/* Tablet: hide the inline links row, switch to hamburger + dropdown.
+   Brand text (title + "by Pakistani Ninja") stays visible from here
+   down — it's just given a capped width so it can never push the
+   CTA/burger off the edge of the navbar. */
 @media (max-width: 900px) {
   .gnav { border-radius: 20px; }
   .gnav-links { display: none; }
   .gnav-burger { display: flex; }
   .gnav-mobile-menu { display: flex; }
+  .gnav-brand-text { max-width: 46vw; }
 }
 
+/* Large phones: shrink the CTA and status pill so the brand block
+   (including the "by Pakistani Ninja" subtitle) always has room to
+   stay visible instead of being hidden. */
 @media (max-width: 480px) {
-  .gnav-sub { display: none; }
+  .gnav { gap: 8px; padding: 7px 8px 7px 12px; }
   .gnav-status { display: none; }
+  .gnav-right { gap: 8px; }
   .gnav-cta { padding: 8px 14px; font-size: 12.5px; }
-  .gnav-title { font-size: 11.5px; }
+  .gnav-title { font-size: 11px; }
+  .gnav-sub { font-size: 8px; letter-spacing: 0.05em; }
+  .gnav-brand-text { max-width: 42vw; }
+  .gnav-brand { gap: 8px; }
 }
 
+/* Small phones: CTA collapses to just its icon/dot so the brand block
+   — logo mark, "Ninja Hub" title, and the "by Pakistani Ninja"
+   subtitle — keeps fitting on one line without wrapping or clipping. */
 @media (max-width: 360px) {
-  .gnav-cta span:not(.gnav-cta-dot) { display: none; }
-  .gnav-cta { padding: 9px 12px; }
+  .gnav-cta-label { display: none; }
+  .gnav-cta { padding: 9px 11px; gap: 6px; }
+  .gnav-mark { width: 26px; height: 26px; }
+  .gnav-title { font-size: 10px; }
+  .gnav-sub { font-size: 7.5px; }
+  .gnav-brand-text { max-width: 38vw; }
+  .gnav-brand { gap: 6px; }
 }
 `;
