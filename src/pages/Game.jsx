@@ -131,6 +131,37 @@ function authHeaders() {
   };
 }
 
+/**
+ * FIX (leaderboard was showing email instead of username):
+ * The leaderboard should only ever display a player's username,
+ * never their email address. Some entries coming back from the
+ * backend may (still) have `username` populated with an email-like
+ * value (or missing entirely, falling back to `email` upstream).
+ * This helper guarantees the UI never renders a raw email:
+ *   1. If `username` exists and is NOT email-shaped -> use it as-is.
+ *   2. If `username` is missing/empty but `email` exists -> use the
+ *      local-part of the email (before the "@"), never the full
+ *      address.
+ *   3. If `username` itself is email-shaped (edge case) -> also
+ *      fall back to the local-part only.
+ *   4. Absolute last resort -> "Player".
+ */
+function getDisplayName(entry) {
+  const isEmailShaped = (v) => typeof v === "string" && v.includes("@");
+  const localPart = (v) => v.split("@")[0];
+
+  if (entry?.username && !isEmailShaped(entry.username)) {
+    return entry.username;
+  }
+  if (entry?.username && isEmailShaped(entry.username)) {
+    return localPart(entry.username);
+  }
+  if (entry?.email) {
+    return localPart(entry.email);
+  }
+  return "Player";
+}
+
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
@@ -1189,6 +1220,9 @@ function GameTheoryRow({ game, index }) {
      rather than a bare name+number list.
    - The current signed-in player's row (if present in the list)
      is subtly highlighted so they can find themselves at a glance.
+   - FIX: display name always goes through getDisplayName() so an
+     email address never renders here — only username (or, as a
+     last-resort fallback, the local-part of an email / "Player").
    ============================================================ */
 function LeaderboardRow({ entry, rank, topXP, isSelf }) {
   const xp = entry.totalXP ?? 0;
@@ -1196,6 +1230,7 @@ function LeaderboardRow({ entry, rank, topXP, isSelf }) {
   const wins = entry.wins ?? 0;
   const losses = entry.losses ?? 0;
   const isTop = rank === 1;
+  const displayName = getDisplayName(entry);
 
   return (
     <div
@@ -1228,7 +1263,7 @@ function LeaderboardRow({ entry, rank, topXP, isSelf }) {
       {/* PLAYER */}
       <div className="flex items-center gap-2.5 min-w-0">
         <img
-          src={entry.avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=" + (entry.username || rank)}
+          src={entry.avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=" + (displayName || rank)}
           alt=""
           className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border shrink-0"
           style={{ borderColor: isSelf ? "#47d6c477" : "#1d232b" }}
@@ -1236,7 +1271,7 @@ function LeaderboardRow({ entry, rank, topXP, isSelf }) {
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="truncate text-sm sm:text-[15px] font-semibold text-[#e7eaee] [font-family:'Space_Grotesk',sans-serif]">
-              {entry.username}
+              {displayName}
             </span>
             {isSelf && (
               <span className="shrink-0 text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-full border border-[#47d6c455] text-[#47d6c4] [font-family:'IBM_Plex_Mono',monospace]">
@@ -1274,6 +1309,7 @@ function LeaderboardRow({ entry, rank, topXP, isSelf }) {
 function LeaderboardPanel({ leaderboard, currentUsername }) {
   const topXP = leaderboard[0]?.totalXP ?? 0;
   const totalPlayers = leaderboard.length;
+  const selfDisplayName = getDisplayName({ username: currentUsername });
 
   return (
     <div className="rounded-2xl border border-[#47d6c4]/20 bg-[#0d1013]/80 backdrop-blur p-4 sm:p-6 shadow-[0_0_40px_rgba(71,214,196,0.12)]">
@@ -1341,7 +1377,7 @@ function LeaderboardPanel({ leaderboard, currentUsername }) {
             entry={entry}
             rank={i + 1}
             topXP={topXP}
-            isSelf={!!currentUsername && entry.username === currentUsername}
+            isSelf={!!currentUsername && getDisplayName(entry) === selfDisplayName}
           />
         ))}
       </div>
@@ -1646,7 +1682,7 @@ export default function Game() {
                       className="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-[#47d6c4]/60"
                     />
                     <div className="text-left">
-                      <p className="font-bold text-base sm:text-lg [font-family:'Space_Grotesk',sans-serif]">{profile.username}</p>
+                      <p className="font-bold text-base sm:text-lg [font-family:'Space_Grotesk',sans-serif]">{getDisplayName(profile)}</p>
                       <p className="text-[#47d6c4] text-sm">Level XP: {profile.totalXP ?? 0}</p>
                       <p className="text-[#545c67] text-xs">Wins {profile.wins ?? 0} · Losses {profile.losses ?? 0}</p>
                     </div>
