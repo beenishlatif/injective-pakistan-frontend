@@ -162,6 +162,28 @@ function getDisplayName(entry) {
   return "Player";
 }
 
+/**
+ * FIX (privacy — leaderboard was still showing full email-derived
+ * usernames like "beenishlatif1027", which exposes the person's
+ * email local-part + a distinguishing number to every other player):
+ *
+ * maskDisplayName() only ever reveals the first few letters of the
+ * name and replaces everything after that — letters AND digits —
+ * with a fixed dot mask. It never reveals the true length of the
+ * original string (the mask length is constant), so nothing about
+ * the underlying email can be reconstructed from what's shown.
+ *
+ * Example: "beenishlatif1027" -> "been••••"
+ *          "ali"              -> "al••••"   (very short names still masked)
+ */
+function maskDisplayName(name) {
+  const clean = (name || "Player").trim();
+  if (!clean) return "Player••••";
+  const visibleCount = clean.length <= 3 ? Math.max(1, clean.length - 1) : 4;
+  const visible = clean.slice(0, visibleCount);
+  return `${visible}••••`;
+}
+
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
@@ -1230,7 +1252,9 @@ function LeaderboardRow({ entry, rank, topXP, isSelf }) {
   const wins = entry.wins ?? 0;
   const losses = entry.losses ?? 0;
   const isTop = rank === 1;
-  const displayName = getDisplayName(entry);
+  const rawDisplayName = getDisplayName(entry);
+  // Self can see their own full name; everyone else only sees the masked version.
+  const displayName = isSelf ? rawDisplayName : maskDisplayName(rawDisplayName);
 
   return (
     <div
