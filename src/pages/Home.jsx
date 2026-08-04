@@ -484,14 +484,23 @@ export default function Home({ apiBaseUrl = DEFAULT_API_BASE_URL }) {
             </div>
             <div className="hp-footer-col">
               <span className="hp-footer-col-title">Community</span>
-              <a href="https://github.com" target="_blank" rel="noreferrer">
+              <a href="https://github.com/Zee910" target="_blank" rel="noreferrer">
                 GitHub
               </a>
-              <a href="https://discord.com" target="_blank" rel="noreferrer">
+              <a href="https://discord.gg/MTMqGBYC" target="_blank" rel="noreferrer">
                 Discord
               </a>
-              <a href="https://twitter.com" target="_blank" rel="noreferrer">
+              <a href="https://x.com/injective" target="_blank" rel="noreferrer">
                 X / Twitter
+              </a>
+            </div>
+            <div className="hp-footer-col">
+              <span className="hp-footer-col-title">Connect</span>
+              <a href="https://x.com/wckyxd" target="_blank" rel="noreferrer">
+                Developer on X
+              </a>
+              <a href="https://www.linkedin.com/in/zee910" target="_blank" rel="noreferrer">
+                LinkedIn
               </a>
             </div>
           </div>
