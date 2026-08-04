@@ -97,14 +97,19 @@ export default function Community() {
             <div className="ch-hero-actions">
               <a
                 className="ch-btn ch-btn-primary"
-                href="https://t.me"
+                href="https://t.me/joininjective"
                 target="_blank"
                 rel="noreferrer"
               >
                 Open Telegram
               </a>
-              <a className="ch-btn ch-btn-ghost" href="https://t.me" target="_blank" rel="noreferrer">
-                Join the Telegram group
+              <a
+                className="ch-btn ch-btn-ghost"
+                href="https://discord.gg/MTMqGBYC"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Join the Discord
               </a>
             </div>
           </div>
@@ -178,7 +183,7 @@ export default function Community() {
             </p>
             <a
               className="ch-btn ch-btn-primary"
-              href="https://t.me"
+              href="https://t.me/joininjective"
               target="_blank"
               rel="noreferrer"
             >
